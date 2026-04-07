@@ -1,0 +1,8 @@
+[package]
+name = "dubAI"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.6.0", features = ["derive"] }
+llm-connect = { git = "https://github.com/retblast/llm-connect", version = "0.1.0" }
