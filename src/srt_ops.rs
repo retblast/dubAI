@@ -1,9 +1,10 @@
+use crate::config::DubConfig;
 use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
-use std::thread::current;
 
 use crate::file_ops::write_srt_file;
+use llm_connect::connection::openai_chat_send_prompt;
 use llm_connect::openai_tts_send_prompt;
 
 #[derive(Clone, Debug)]
@@ -70,12 +71,10 @@ pub fn get_srt_fragment(buffered_srt_file: &mut BufReader<File>) -> (SRTFragment
     return (current_fragment, finished_reading);
 }
 
-pub async fn new_process_srt_file(
+pub async fn process_srt_file(
     input_srt_file: File,
     output_srt_file: File,
-    input_language: &String,
-    output_language: &String,
-    extra_context: &String,
+    dub_config: &DubConfig,
 ) -> () {
     let mut buffered_reader = BufReader::new(input_srt_file);
     let mut current_srt_fragment: SRTFragment;
@@ -92,19 +91,12 @@ pub async fn new_process_srt_file(
     translated_fragment = current_srt_fragment.clone();
     println!("Translating: {}", &current_srt_fragment.line);
     // TODO: implement translate_line
-    // translated_fragment.line = match translate_line(
-    //     input_language,
-    //     output_language,
-    //     extra_context,
-    //     &current_srt_fragment.line,
-    // )
-    // .await
-    // {
-    //     Ok(string) => string,
-    //     Err(why) => {
-    //         panic!("Failed to translate the current line, {}", why);
-    //     }
-    // };
+    translated_fragment.line = match translate_line(&current_srt_fragment.line, &dub_config).await {
+        Ok(string) => string,
+        Err(why) => {
+            panic!("Failed to translate the current line, {}", why);
+        }
+    };
     write_srt_file(&translated_fragment, output_srt_file);
 }
 
@@ -248,4 +240,37 @@ pub fn get_translated_srt_progress(read_buffer: &mut BufReader<&File>) -> u16 {
         };
     }
     return progress_index;
+}
+
+// Translates a given line
+pub async fn translate_line(
+    line: &String,
+    dub_config: &DubConfig,
+) -> Result<String, Box<dyn std::error::Error>> {
+    // Because we can't access fields in format!
+    let input_language = &dub_config.translator_config.input_language;
+    let output_language = &dub_config.translator_config.output_language;
+    let extra_context = &dub_config.translator_config.extra_context;
+
+    let system_prompt = format!(
+        "
+        You are an AI translator, translating lines from a an SRT file in {input_language} to {output_language}.
+        Your response will include only the translated text, only in the requested language. Nothing more.
+        Only quote stuff when characters (or something) explain a thing, use single quotes,
+        like this: \" Translated text 'example'\"
+        Only give 1 translation answer.
+        Follow this to the letter.
+        Follow this extra directives too: {extra_context}.
+        "
+    );
+    let user_prompt = format!("This is the line that you have to translate: {line}");
+    let response = openai_chat_send_prompt(
+        &dub_config.translator_config.llm_address,
+        &system_prompt,
+        &user_prompt,
+        &0.6,
+        &300,
+    )
+    .await?;
+    return Ok(response.choices[0].message.content.trim().to_string());
 }

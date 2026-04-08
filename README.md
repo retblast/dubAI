@@ -9,6 +9,7 @@ AI-powered dubbing toolset that I am working on. It's mostly for my own usage bu
 - Mix original audio with dubbed audio
   - Duck original audio's volume according to the SRT time fragments
   - Adjust audio as needed
+- Pass LLM addresses thru CLI
 
 #  Principles
 - Modular
