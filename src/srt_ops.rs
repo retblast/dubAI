@@ -214,7 +214,10 @@ pub async fn dub_line(
                 ),
             };
         }
-        Err(_) => println!("Failed to generate: {}", output_filename),
+        Err(why) => println!(
+            "Failed to generate: {}, because of: {}",
+            output_filename, why
+        ),
     };
 }
 

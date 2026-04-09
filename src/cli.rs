@@ -1,4 +1,5 @@
 use crate::config::DubConfig;
+use crate::config::set_dubber_config;
 use crate::config::set_translator_config;
 use clap::Parser;
 use clap::Subcommand;
@@ -7,11 +8,11 @@ use std::path::PathBuf;
 
 #[derive(Parser)]
 struct TranslatorCLI {
-    /// Language to dub from (fed to the AI)
+    /// Language to trandlate from (fed to the AI)
     #[arg(default_value = "English", short = 'l', long)]
     input_language: Option<String>,
 
-    /// Language to dub to (fed to the AI)
+    /// Language to translate to (fed to the AI)
     #[arg(default_value = "English", short = 'L', long)]
     output_language: Option<String>,
 
@@ -32,10 +33,22 @@ struct TranslatorCLI {
     output_srt_file: Option<String>,
 }
 
+#[derive(Parser)]
+struct DubberCLI {
+    /// URL address of the LLM
+    #[arg(long)]
+    address: Option<String>,
+    /// Language to dub to (fed to the AI)
+    #[arg(default_value = "English", short = 'L', long)]
+    output_language: Option<String>,
+}
+
 #[derive(Subcommand)]
 enum Mode {
     /// Translation (SRT files) mode
     Translate(TranslatorCLI),
+    /// Dubbing mode
+    Dub(DubberCLI),
 }
 
 #[derive(Parser)]
@@ -99,9 +112,22 @@ fn setup_translator_cli(options: TranslatorCLI, dub_config: &mut DubConfig) {
     );
 }
 
+fn setup_dubber_cli(options: DubberCLI, dub_config: &mut DubConfig) {
+    let llm_address = match options.address {
+        Some(address) => address,
+        None => panic!("No URL address for the dubber LLM connection has been specified."),
+    };
+    let output_language = match options.output_language {
+        Some(address) => address,
+        None => panic!("No language to dub to specified."),
+    };
+    set_dubber_config(dub_config, llm_address, output_language);
+}
+
 pub fn setup_from_cli(dub_config: &mut DubConfig) {
     let cli = Cli::parse();
     match cli.mode {
         Mode::Translate(options) => setup_translator_cli(options, dub_config),
+        Mode::Dub(options) => setup_dubber_cli(options, dub_config),
     }
 }

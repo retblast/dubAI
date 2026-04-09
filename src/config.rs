@@ -3,6 +3,7 @@ use std::path::PathBuf;
 #[derive(Default)]
 pub struct DubConfig {
     pub translator_config: TranslatorConfig,
+    pub dubber_config: DubberConfig,
 }
 
 #[derive(Default)]
@@ -42,4 +43,12 @@ pub fn set_translator_config(
         output_srt_path: output_srt_path,
     };
     dub_config.translator_config = translator_config;
+}
+
+pub fn set_dubber_config(dub_config: &mut DubConfig, llm_address: String, output_language: String) {
+    let dubber_config = DubberConfig {
+        llm_address: llm_address,
+        output_language: output_language,
+    };
+    dub_config.dubber_config = dubber_config;
 }
