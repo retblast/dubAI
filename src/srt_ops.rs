@@ -1,11 +1,16 @@
 use crate::config::DubConfig;
+use crate::config::DubberConfig;
+use crate::config::TranslatorConfig;
+use crate::file_ops::write_srt_file;
+use llm_connect::connection::openai_chat_send_prompt;
+use llm_connect::connection::openai_tts_send_prompt;
+use std::clone;
 use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
-
-use crate::file_ops::write_srt_file;
-use llm_connect::connection::openai_chat_send_prompt;
-use llm_connect::openai_tts_send_prompt;
+use std::path::Path;
+use std::path::PathBuf;
+use tokio::fs;
 
 #[derive(Clone, Debug)]
 pub struct SRTFragment {
@@ -100,118 +105,6 @@ pub async fn process_srt_file(
     write_srt_file(&translated_fragment, output_srt_file);
 }
 
-// todo: add resuming flag, and unset it post resume
-//
-// Traverses the file, gets srt fragments, and then sends them to process them
-// shouldn't return anything
-// pub async fn process_srt_file(
-//     input_file: &File,
-//     output_file: &File,
-//     resume_index: &mut u16,
-//     input_language: &String,
-//     output_language: &String,
-//     extra_context: &String,
-// ) -> () {
-//     // I want to read the file, fragment by fragment.
-//     // A fragment is a portion of a line of a SRT file
-//     // Index number, duration and text
-//     //
-//     // Process:
-//     // Get fragment (index, duration, text)
-//     // Process (translate) it (aka) push it to the LLM
-//     // Put fragment on the output file
-//     // TODO: I have to consider how the code for resuming translation
-//     // will be
-//     let mut buffered_reader = BufReader::new(input_file);
-//     let mut current_line = String::new();
-//     let mut current_index = 0;
-//     let mut current_timing = String::new();
-//     let mut finished_reading = false;
-
-//     let mut current_fragment = SRTFragment {
-//         index: 0,
-//         timing: String::new(),
-//         line: String::new(),
-//     };
-//     let mut translated_fragment = SRTFragment {
-//         index: 0,
-//         timing: String::new(),
-//         line: String::new(),
-//     };
-
-//     // todo: add code to handle the resume_index
-//     // We can basically skip 3 lines to get to a new index, so this can help speed things up a bit
-//     if *resume_index != 0 {
-//         println!("Resuming from line {}", resume_index);
-//         while *resume_index != 0 {
-//             match buffered_reader.read_line(&mut current_line) {
-//                 Err(why) => println!("Couldn't read: {}", why),
-//                 Ok(1_usize..) => {}
-//                 Ok(0) => {
-//                     println!(
-//                         "The file finished reading before we could continue with the translation"
-//                     );
-//                     finished_reading = true;
-//                     continue;
-//                 }
-//             }
-//             *resume_index = *resume_index - 1;
-//         }
-//     }
-//     while !finished_reading {
-//         // clear line
-//         current_line.clear();
-//         // get a new line
-//         match buffered_reader.read_line(&mut current_line) {
-//             Err(why) => println!("Couldn't read: {}", why),
-//             Ok(1_usize..) => {}
-//             Ok(0) => {
-//                 finished_reading = true;
-//                 continue;
-//             }
-//         }
-
-//         if current_index != 0 {
-//             if current_timing.is_empty() {
-//                 current_timing = current_line.clone().trim().to_owned();
-//             } else {
-//                 // TODO: add more details when in debug mode
-
-//                 // Assemble current fragment for potential future use
-//                 current_fragment = SRTFragment {
-//                     index: current_index,
-//                     timing: current_timing,
-//                     line: current_line.clone().trim().to_owned(),
-//                 };
-//                 translated_fragment = current_fragment.clone();
-//                 println!("Translating: {}", &current_fragment.line);
-//                 translated_fragment.line = match translate_line(
-//                     input_language,
-//                     output_language,
-//                     extra_context,
-//                     &current_fragment.line,
-//                 )
-//                 .await
-//                 {
-//                     Ok(string) => string,
-//                     Err(why) => {
-//                         panic!("Failed to translate the current line, {}", why);
-//                     }
-//                 };
-//                 write_srt_file(&translated_fragment, output_file);
-//                 current_index = 0;
-//                 current_timing = "".to_owned();
-//             }
-//         }
-
-//         current_index = match current_line.trim().parse::<u32>() {
-//             // Is this the correct way to "do nothing"?
-//             Err(_) => current_index,
-//             Ok(number) => number,
-//         };
-//     }
-// }
-
 // checks the progress of the translated srt
 // I assume that it is well formed... so
 // TODO: validation/checking of the output srt.
@@ -273,4 +166,70 @@ pub async fn translate_line(
     )
     .await?;
     return Ok(response.choices[0].message.content.trim().to_string());
+}
+
+// Dubs a line
+// Creates a index_dubbed.mp3 file
+pub async fn dub_line(
+    dubber_config: &DubberConfig,
+    output_folder: &String,
+    line_to_dub: &String,
+    voice_ref: &String,
+) {
+    // The output filename is: output_folder + the index of the voice ref + _dubbed.mp3
+    let output_filename = {
+        let mut cloned_voice_ref = voice_ref.clone();
+        let underscore_idx = match cloned_voice_ref.find("_") {
+            Some(number) => number,
+            None => panic!(
+                "dub_line failed to find the underscore, index: {}",
+                voice_ref
+            ),
+        };
+        // Here I
+        cloned_voice_ref.replace_range(underscore_idx + 1.., "dubbed.mp3");
+        cloned_voice_ref.insert_str(0, output_folder);
+        cloned_voice_ref
+    };
+    match openai_tts_send_prompt(
+        &dubber_config.llm_address,
+        &output_filename,
+        &"kcpp".to_string(),
+        line_to_dub,
+        voice_ref,
+    )
+    .await
+    {
+        Ok(_) => {
+            let current_dir = match std::env::current_dir() {
+                Ok(cwd) => cwd,
+                Err(_) => panic!("Couldn't get current directory"),
+            };
+            let dubbing_path = Path::new(current_dir.as_path()).join(&output_filename);
+            match fs::rename(&output_filename, dubbing_path).await {
+                Ok(_) => {}
+                Err(why) => println!(
+                    "Couldn't put the generated audio file in its folder, because {}",
+                    why
+                ),
+            };
+        }
+        Err(_) => println!("Failed to generate: {}", output_filename),
+    };
+}
+
+// Dub an SRT file
+// Requires a running LLM
+pub fn dub_srt_file(
+    srt_file: File,
+    dubber_config: &DubberConfig,
+    line_to_dub: &String,
+    voice_ref: &String,
+) {
+    let mut buffered_reader = BufReader::new(srt_file);
+    let mut current_srt_fragment: SRTFragment;
+    let mut finished_reading = false;
+    while !finished_reading {
+        (current_srt_fragment, finished_reading) = get_srt_fragment(&mut buffered_reader);
+    }
 }

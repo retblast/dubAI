@@ -4,8 +4,13 @@ AI-powered dubbing toolset that I am working on. It's mostly for my own usage bu
 
 # TODO
 - Generate SRT
-- Translate SRT
-- Dub according to SRT
+- Translate SRT [partially done]
+- Dub according to SRT [wip]
+  - Get SRT fragment to know timing, position and text
+  - Create n audio files according to the SRT timings
+  - Send i audio file together with its corresponding text to the dubber LLM, n times
+  - Save the files
+  - All of this in a proper folder
 - Mix original audio with dubbed audio
   - Duck original audio's volume according to the SRT time fragments
   - Adjust audio as needed

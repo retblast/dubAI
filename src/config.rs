@@ -1,6 +1,17 @@
+use std::path::PathBuf;
+
 #[derive(Default)]
 pub struct DubConfig {
     pub translator_config: TranslatorConfig,
+}
+
+#[derive(Default)]
+pub struct DubberConfig {
+    pub llm_address: String,
+    // Uneeded, but keep just in case
+    // pub input_language: String,
+    // Not yet supported by koboldCPP
+    pub output_language: String,
 }
 
 #[derive(Default)]
@@ -9,6 +20,8 @@ pub struct TranslatorConfig {
     pub input_language: String,
     pub output_language: String,
     pub extra_context: String,
+    pub input_srt_path: PathBuf,
+    pub output_srt_path: PathBuf,
 }
 
 pub fn set_translator_config(
@@ -17,12 +30,16 @@ pub fn set_translator_config(
     input_language: String,
     output_language: String,
     extra_context: String,
+    input_srt_path: PathBuf,
+    output_srt_path: PathBuf,
 ) {
     let translator_config = TranslatorConfig {
         llm_address: llm_address,
         input_language: input_language,
         output_language: output_language,
         extra_context: extra_context,
+        input_srt_path: input_srt_path,
+        output_srt_path: output_srt_path,
     };
     dub_config.translator_config = translator_config;
 }

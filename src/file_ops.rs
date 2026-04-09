@@ -1,8 +1,8 @@
+use crate::srt_ops::SRTFragment;
+use ffmpeg_sidecar::child;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
-
-use crate::srt_ops::SRTFragment;
 
 pub fn open_input_file(input_string_path: &PathBuf) -> File {
     let input_file = match File::open(input_string_path.as_path()) {

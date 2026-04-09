@@ -5,5 +5,6 @@ edition = "2024"
 
 [dependencies]
 clap = { version = "4.6.0", features = ["derive"] }
+ffmpeg-sidecar = "2.5.0"
 llm-connect = { git = "https://github.com/retblast/llm-connect", version = "0.1.0" }
 tokio = { version = "1.51.0", features = ["full"] }
