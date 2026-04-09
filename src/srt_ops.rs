@@ -1,15 +1,14 @@
 use crate::config::DubConfig;
 use crate::config::DubberConfig;
 use crate::config::TranslatorConfig;
+
 use crate::file_ops::write_srt_file;
 use llm_connect::connection::openai_chat_send_prompt;
 use llm_connect::connection::openai_tts_send_prompt;
-use std::clone;
 use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::path::Path;
-use std::path::PathBuf;
 use tokio::fs;
 
 #[derive(Clone, Debug)]
@@ -43,10 +42,10 @@ pub fn get_srt_fragment(buffered_srt_file: &mut BufReader<File>) -> (SRTFragment
             // Finished reading the fragment
             Ok(0_usize) => {
                 finished_reading = true;
-                continue;
+                return (current_fragment, finished_reading);
             }
         }
-
+        //println!("Current line: {}", &current_line);
         // After reading the current index
         if current_index != 0 {
             // Read the timing first
@@ -55,14 +54,16 @@ pub fn get_srt_fragment(buffered_srt_file: &mut BufReader<File>) -> (SRTFragment
             } else {
                 // Finally, we also now have the current line, so
                 // assemble the whole fragment
+                //println!("Fragment passed");
                 current_fragment = SRTFragment {
                     index: current_index,
                     timing: current_timing,
                     line: current_line.clone().trim().to_owned(),
                 };
+                return (current_fragment, finished_reading);
                 // Assemble current fragment for potential future use
-                current_index = 0;
-                current_timing = "".to_owned();
+                // current_index = 0;
+                // current_timing = "".to_owned();
             }
         }
 
@@ -177,19 +178,13 @@ pub async fn dub_line(
     voice_ref: &String,
 ) {
     // The output filename is: output_folder + the index of the voice ref + _dubbed.mp3
+    // the trimming is kinda finnicky
+    let voice_ref_idx = voice_ref.trim_end_matches("_ref.wav").to_string();
     let output_filename = {
-        let mut cloned_voice_ref = voice_ref.clone();
-        let underscore_idx = match cloned_voice_ref.find("_") {
-            Some(number) => number,
-            None => panic!(
-                "dub_line failed to find the underscore, index: {}",
-                voice_ref
-            ),
-        };
-        // Here I
-        cloned_voice_ref.replace_range(underscore_idx + 1.., "dubbed.mp3");
-        cloned_voice_ref.insert_str(0, output_folder);
-        cloned_voice_ref
+        let mut temp_clone = voice_ref_idx.clone();
+        temp_clone.push_str("_dubbed.mp3");
+        temp_clone.insert_str(0, output_folder);
+        temp_clone
     };
     match openai_tts_send_prompt(
         &dubber_config.llm_address,
@@ -213,6 +208,10 @@ pub async fn dub_line(
                     why
                 ),
             };
+            println!(
+                "Dubbed line {}, filename: {}",
+                voice_ref_idx, &output_filename
+            );
         }
         Err(why) => println!(
             "Failed to generate: {}, because of: {}",
@@ -223,16 +222,22 @@ pub async fn dub_line(
 
 // Dub an SRT file
 // Requires a running LLM
-pub fn dub_srt_file(
-    srt_file: File,
-    dubber_config: &DubberConfig,
-    line_to_dub: &String,
-    voice_ref: &String,
-) {
+pub async fn dub_srt_file(srt_file: File, dubber_config: &DubberConfig, output_folder: &String) {
     let mut buffered_reader = BufReader::new(srt_file);
     let mut current_srt_fragment: SRTFragment;
     let mut finished_reading = false;
     while !finished_reading {
         (current_srt_fragment, finished_reading) = get_srt_fragment(&mut buffered_reader);
+        if current_srt_fragment.index == 0 {
+            return;
+        }
+        let voice_ref_idx = current_srt_fragment.index;
+        dub_line(
+            dubber_config,
+            output_folder,
+            &current_srt_fragment.line,
+            &format!("{}_ref.wav", voice_ref_idx),
+        )
+        .await;
     }
 }
