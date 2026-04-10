@@ -1,15 +1,10 @@
 use crate::config::DubConfig;
-use crate::config::DubberConfig;
 use crate::config::TranslatorConfig;
-
 use crate::file_ops::write_srt_file;
 use llm_connect::connection::openai_chat_send_prompt;
-use llm_connect::connection::openai_tts_send_prompt;
 use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
-use std::path::Path;
-use tokio::fs;
 
 #[derive(Clone, Debug)]
 pub struct SRTFragment {
@@ -167,77 +162,4 @@ pub async fn translate_line(
     )
     .await?;
     return Ok(response.choices[0].message.content.trim().to_string());
-}
-
-// Dubs a line
-// Creates a index_dubbed.mp3 file
-pub async fn dub_line(
-    dubber_config: &DubberConfig,
-    output_folder: &String,
-    line_to_dub: &String,
-    voice_ref: &String,
-) {
-    // The output filename is: output_folder + the index of the voice ref + _dubbed.mp3
-    // the trimming is kinda finnicky
-    let voice_ref_idx = voice_ref.trim_end_matches("_ref.wav").to_string();
-    let output_filename = {
-        let mut temp_clone = voice_ref_idx.clone();
-        temp_clone.push_str("_dubbed.mp3");
-        temp_clone.insert_str(0, output_folder);
-        temp_clone
-    };
-    match openai_tts_send_prompt(
-        &dubber_config.llm_address,
-        &output_filename,
-        &"kcpp".to_string(),
-        line_to_dub,
-        voice_ref,
-    )
-    .await
-    {
-        Ok(_) => {
-            let current_dir = match std::env::current_dir() {
-                Ok(cwd) => cwd,
-                Err(_) => panic!("Couldn't get current directory"),
-            };
-            let dubbing_path = Path::new(current_dir.as_path()).join(&output_filename);
-            match fs::rename(&output_filename, dubbing_path).await {
-                Ok(_) => {}
-                Err(why) => println!(
-                    "Couldn't put the generated audio file in its folder, because {}",
-                    why
-                ),
-            };
-            println!(
-                "Dubbed line {}, filename: {}",
-                voice_ref_idx, &output_filename
-            );
-        }
-        Err(why) => println!(
-            "Failed to generate: {}, because of: {}",
-            output_filename, why
-        ),
-    };
-}
-
-// Dub an SRT file
-// Requires a running LLM
-pub async fn dub_srt_file(srt_file: File, dubber_config: &DubberConfig, output_folder: &String) {
-    let mut buffered_reader = BufReader::new(srt_file);
-    let mut current_srt_fragment: SRTFragment;
-    let mut finished_reading = false;
-    while !finished_reading {
-        (current_srt_fragment, finished_reading) = get_srt_fragment(&mut buffered_reader);
-        if current_srt_fragment.index == 0 {
-            return;
-        }
-        let voice_ref_idx = current_srt_fragment.index;
-        dub_line(
-            dubber_config,
-            output_folder,
-            &current_srt_fragment.line,
-            &format!("{}_ref.wav", voice_ref_idx),
-        )
-        .await;
-    }
 }
