@@ -6,6 +6,9 @@ use llm_connect::connection::openai_tts_send_prompt;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
+use std::path::PathBuf;
+use std::str::FromStr;
+
 use tokio::fs;
 
 fn create_base_ffmpeg_command(audio_file: &String) -> FfmpegCommand {
@@ -16,12 +19,16 @@ fn create_base_ffmpeg_command(audio_file: &String) -> FfmpegCommand {
     ffmpeg_command
 }
 // Creates mp3 files that are dialogue, taken from the SRT file
-pub fn create_voice_references(srt_file: File, audio_file: String) {
+pub fn create_voice_references(
+    srt_file: File,
+    audio_file: String,
+    output_folder: &String,
+) -> Vec<PathBuf> {
     let mut buffered_reader = BufReader::new(srt_file);
     let mut current_srt_fragment: SRTFragment;
     let mut finished_reading = false;
     let mut ffmpeg_command = create_base_ffmpeg_command(&audio_file);
-    println!("whatdefok");
+    let mut voice_references: Vec<PathBuf> = Vec::new();
     while !finished_reading {
         (current_srt_fragment, finished_reading) = get_srt_fragment(&mut buffered_reader);
         if current_srt_fragment.index == 0 {
@@ -32,11 +39,23 @@ pub fn create_voice_references(srt_file: File, audio_file: String) {
             Some((start, end)) => (start.trim().replace(',', "."), end.trim().replace(',', ".")),
             None => panic!("Failed to read SRT timings at SRT index: {}", voice_ref_idx),
         };
+        let mut output_filename = format!("{}_ref.wav", voice_ref_idx);
+        output_filename.insert_str(0, output_folder);
+
+        let output_path = match PathBuf::from_str(&output_filename.as_str()) {
+            Ok(path) => path,
+            Err(why) => {
+                panic!(
+                    "Failed to get path for {}, because of {}",
+                    &output_filename, why
+                );
+            }
+        };
         // Code to create the file
         ffmpeg_command.args(["-ss", format!("{}", start).as_str()]);
         ffmpeg_command.args(["-to", format!("{}", end).as_str()]);
-        ffmpeg_command.output(format!("{}_ref.wav", voice_ref_idx));
-        ffmpeg_command.print_command();
+        ffmpeg_command.output(&output_filename.as_str());
+        voice_references.push(output_path);
         match ffmpeg_command.spawn() {
             Ok(mut child) => match child.wait() {
                 Ok(..) => {}
@@ -52,6 +71,7 @@ pub fn create_voice_references(srt_file: File, audio_file: String) {
         };
         ffmpeg_command = create_base_ffmpeg_command(&audio_file);
     }
+    return voice_references;
 }
 
 // Dubs a line
@@ -65,7 +85,7 @@ pub async fn dub_line(
     // The output filename is: output_folder + the index of the voice ref + _dubbed.mp3
     // the trimming is kinda finnicky
     let voice_ref_idx = voice_ref.trim_end_matches("_ref.wav").to_string();
-    let output_filename = {
+    let mut output_filename = {
         let mut temp_clone = voice_ref_idx.clone();
         temp_clone.push_str("_dubbed.mp3");
         temp_clone.insert_str(0, output_folder);
