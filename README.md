@@ -8,12 +8,14 @@ AI-powered dubbing toolset that I am working on. It's mostly for my own usage bu
 - Dub according to SRT [wip]
   - [x] Get SRT fragment to know timing, position and text 
   - [x] Create n audio files according to the SRT timings
-  - Send i audio file together with its corresponding text to the dubber LLM, n times
+  - [x] Send i audio file together with its corresponding text to the dubber LLM, n times
   - Save the files
   - All of this in a proper folder
 - Mix original audio with dubbed audio
   - Duck original audio's volume according to the SRT time fragments
   - Adjust audio as needed
+
+  Note: I have to have koboldcpp running before the voice references are created! Also, decide whether I will
 - Pass LLM addresses thru CLI
 
 #  Principles

@@ -1,21 +1,21 @@
 use crate::config::DubConfig;
-use crate::config::TranslatorConfig;
-use crate::file_ops::write_srt_file;
 use llm_connect::connection::openai_chat_send_prompt;
 use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
 
-#[derive(Clone, Debug)]
+#[derive(Default, Clone, Debug)]
 pub struct SRTFragment {
-    pub index: u32,
+    pub index: usize,
     pub timing: String,
     pub line: String,
 }
 
 // Reads from a buffer, returns a SRTFragment and the buffer, for the next iteration
 // or smth else
-pub fn get_srt_fragment(buffered_srt_file: &mut BufReader<File>) -> (SRTFragment, bool) {
+pub fn get_srt_fragments(srt_file: &File) -> Vec<SRTFragment> {
+    let mut vector_fragments = Vec::new();
+    let mut buffered_srt_file = BufReader::new(srt_file);
     let mut finished_reading = false;
     let mut current_line = String::new();
     let mut current_index = 0;
@@ -23,9 +23,7 @@ pub fn get_srt_fragment(buffered_srt_file: &mut BufReader<File>) -> (SRTFragment
     let mut finished_reading = false;
 
     let mut current_fragment = SRTFragment {
-        index: 0,
-        timing: String::new(),
-        line: String::new(),
+        ..Default::default()
     };
     while !finished_reading {
         // clear line
@@ -37,10 +35,10 @@ pub fn get_srt_fragment(buffered_srt_file: &mut BufReader<File>) -> (SRTFragment
             // Finished reading the fragment
             Ok(0_usize) => {
                 finished_reading = true;
-                return (current_fragment, finished_reading);
+                return vector_fragments;
             }
         }
-        //println!("Current line: {}", &current_line);
+        println!("Current line: {}", &current_line);
         // After reading the current index
         if current_index != 0 {
             // Read the timing first
@@ -55,51 +53,50 @@ pub fn get_srt_fragment(buffered_srt_file: &mut BufReader<File>) -> (SRTFragment
                     timing: current_timing,
                     line: current_line.clone().trim().to_owned(),
                 };
-                return (current_fragment, finished_reading);
-                // Assemble current fragment for potential future use
-                // current_index = 0;
-                // current_timing = "".to_owned();
+                vector_fragments.push(current_fragment);
+                // Clean up for next iteration
+                current_index = 0;
+                current_timing = "".to_owned();
             }
         }
-
-        current_index = match current_line.trim().parse::<u32>() {
+        current_index = match current_line.trim().parse::<usize>() {
             // Is this the correct way to "do nothing"?
             Err(_) => current_index,
             Ok(number) => number,
         };
     }
-
-    return (current_fragment, finished_reading);
+    return vector_fragments;
 }
 
-pub async fn process_srt_file(
-    input_srt_file: File,
-    output_srt_file: File,
-    dub_config: &DubConfig,
-) -> () {
-    let mut buffered_reader = BufReader::new(input_srt_file);
-    let mut current_srt_fragment: SRTFragment;
-    let mut translated_fragment: SRTFragment;
-    let mut finished_reading = false;
+// TODO: Fix
+// pub async fn process_srt_file(
+//     input_srt_file: File,
+//     output_srt_file: File,
+//     dub_config: &DubConfig,
+// ) -> () {
+//     let mut buffered_reader = BufReader::new(input_srt_file);
+//     let mut current_srt_fragment = Vec::new();
+//     let mut translated_fragment: SRTFragment;
+//     let mut finished_reading = false;
 
-    (current_srt_fragment, finished_reading) = get_srt_fragment(&mut buffered_reader);
+//     (current_srt_fragment, finished_reading) = get_srt_fragments(&input_srt_file);
 
-    // Finished reading = finished translating
-    if finished_reading {
-        return;
-    }
+//     // Finished reading = finished translating
+//     if finished_reading {
+//         return;
+//     }
 
-    translated_fragment = current_srt_fragment.clone();
-    println!("Translating: {}", &current_srt_fragment.line);
-    // TODO: implement translate_line
-    translated_fragment.line = match translate_line(&current_srt_fragment.line, &dub_config).await {
-        Ok(string) => string,
-        Err(why) => {
-            panic!("Failed to translate the current line, {}", why);
-        }
-    };
-    write_srt_file(&translated_fragment, output_srt_file);
-}
+//     translated_fragment = current_srt_fragment.clone();
+//     println!("Translating: {}", &current_srt_fragment.line);
+//     // TODO: implement translate_line
+//     translated_fragment.line = match translate_line(&current_srt_fragment.line, &dub_config).await {
+//         Ok(string) => string,
+//         Err(why) => {
+//             panic!("Failed to translate the current line, {}", why);
+//         }
+//     };
+//     write_srt_file(&translated_fragment, output_srt_file);
+// }
 
 // checks the progress of the translated srt
 // I assume that it is well formed... so

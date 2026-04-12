@@ -1,5 +1,4 @@
 use crate::srt_ops::SRTFragment;
-use ffmpeg_sidecar::child;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;

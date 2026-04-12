@@ -38,6 +38,9 @@ struct DubberCLI {
     /// URL address of the LLM
     #[arg(long)]
     address: Option<String>,
+    /// Directory where the voice references are
+    #[arg(default_value = "./temp/", long)]
+    voice_refs_dir: Option<String>,
     /// Language to dub to (fed to the AI)
     #[arg(default_value = "English", short = 'L', long)]
     output_language: Option<String>,
@@ -117,11 +120,25 @@ fn setup_dubber_cli(options: DubberCLI, dub_config: &mut DubConfig) {
         Some(address) => address,
         None => panic!("No URL address for the dubber LLM connection has been specified."),
     };
+    let voice_refs_dir = match options.voice_refs_dir {
+        Some(mut dir) => {
+            // Append "/" if necessary
+            if dir.chars().last() != Some('/') {
+                dir.push('/');
+            }
+            dir
+        }
+        // TODO: Fix this logic... what is default value for?
+        None => {
+            println!("No voice references directory specified. ./temp/ will be used");
+            "./temp/".to_string()
+        }
+    };
     let output_language = match options.output_language {
         Some(address) => address,
         None => panic!("No language to dub to specified."),
     };
-    set_dubber_config(dub_config, llm_address, output_language);
+    set_dubber_config(dub_config, llm_address, voice_refs_dir, output_language);
 }
 
 pub fn setup_from_cli(dub_config: &mut DubConfig) {
