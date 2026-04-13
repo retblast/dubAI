@@ -11,6 +11,17 @@ pub struct SRTFragment {
     pub line: String,
 }
 
+pub fn get_srt_timings(srt_fragment: &SRTFragment) -> (String, String) {
+    let (start, end) = match srt_fragment.timing.split_once("-->") {
+        Some((start, end)) => (start.trim().replace(',', "."), end.trim().replace(',', ".")),
+        None => panic!(
+            "Failed to read SRT timings at SRT index: {}",
+            srt_fragment.index
+        ),
+    };
+    return (start, end);
+}
+
 // Reads from a buffer, returns a SRTFragment and the buffer, for the next iteration
 // or smth else
 pub fn get_srt_fragments(srt_file: &File) -> Vec<SRTFragment> {
@@ -38,7 +49,6 @@ pub fn get_srt_fragments(srt_file: &File) -> Vec<SRTFragment> {
                 return vector_fragments;
             }
         }
-        println!("Current line: {}", &current_line);
         // After reading the current index
         if current_index != 0 {
             // Read the timing first
@@ -47,7 +57,6 @@ pub fn get_srt_fragments(srt_file: &File) -> Vec<SRTFragment> {
             } else {
                 // Finally, we also now have the current line, so
                 // assemble the whole fragment
-                //println!("Fragment passed");
                 current_fragment = SRTFragment {
                     index: current_index,
                     timing: current_timing,

@@ -9,11 +9,14 @@ pub struct DubConfig {
 #[derive(Default)]
 pub struct DubberConfig {
     pub llm_address: String,
+    pub input_audio: String,
+    pub input_srt: String,
     pub voice_refs_dir: String,
     // Uneeded, but keep just in case
     // pub input_language: String,
     // Not yet supported by koboldCPP
     pub output_language: String,
+    pub output_folder: String,
 }
 
 #[derive(Default)]
@@ -49,13 +52,19 @@ pub fn set_translator_config(
 pub fn set_dubber_config(
     dub_config: &mut DubConfig,
     llm_address: String,
+    input_audio: String,
+    input_srt: String,
     voice_refs_dir: String,
     output_language: String,
+    output_folder: String,
 ) {
     let dubber_config = DubberConfig {
         llm_address: llm_address,
+        input_audio: input_audio,
+        input_srt: input_srt,
         voice_refs_dir: voice_refs_dir,
         output_language: output_language,
+        output_folder: output_folder,
     };
     dub_config.dubber_config = dubber_config;
 }

@@ -38,6 +38,15 @@ struct DubberCLI {
     /// URL address of the LLM
     #[arg(long)]
     address: Option<String>,
+    /// Input audio file to use for dubbing
+    #[arg(long)]
+    input_audio: Option<String>,
+    /// Output audio folder to store the dubbed files on
+    #[arg(long)]
+    output_folder: Option<String>,
+    /// Input srt file to use for dubbing
+    #[arg(long)]
+    input_srt: Option<String>,
     /// Directory where the voice references are
     #[arg(default_value = "./temp/", long)]
     voice_refs_dir: Option<String>,
@@ -120,6 +129,18 @@ fn setup_dubber_cli(options: DubberCLI, dub_config: &mut DubConfig) {
         Some(address) => address,
         None => panic!("No URL address for the dubber LLM connection has been specified."),
     };
+    let input_audio = match options.input_audio {
+        Some(audio) => audio,
+        None => panic!("No input audio for the dubber LLM has been specified."),
+    };
+    let output_folder = match options.output_folder {
+        Some(folder) => folder,
+        None => panic!("No output folder for the dubber LLM has been specified."),
+    };
+    let input_srt = match options.input_srt {
+        Some(audio) => audio,
+        None => panic!("No input SRT file for the dubber LLM has been specified."),
+    };
     let voice_refs_dir = match options.voice_refs_dir {
         Some(mut dir) => {
             // Append "/" if necessary
@@ -138,7 +159,15 @@ fn setup_dubber_cli(options: DubberCLI, dub_config: &mut DubConfig) {
         Some(address) => address,
         None => panic!("No language to dub to specified."),
     };
-    set_dubber_config(dub_config, llm_address, voice_refs_dir, output_language);
+    set_dubber_config(
+        dub_config,
+        llm_address,
+        input_audio,
+        input_srt,
+        voice_refs_dir,
+        output_language,
+        output_folder,
+    );
 }
 
 pub fn setup_from_cli(dub_config: &mut DubConfig) {

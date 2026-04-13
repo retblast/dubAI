@@ -1,5 +1,6 @@
 use crate::config::DubberConfig;
 use crate::srt_ops::SRTFragment;
+use crate::srt_ops::get_srt_timings;
 use ffmpeg_sidecar::command::FfmpegCommand;
 use llm_connect::connection::openai_tts_send_prompt;
 use std::collections::HashMap;
@@ -19,17 +20,14 @@ fn create_base_ffmpeg_command(audio_file: &String) -> FfmpegCommand {
 // Creates mp3 files that are dialogue, taken from the SRT file
 pub fn create_voice_references(
     srt_fragments: &Vec<SRTFragment>,
-    audio_file: String,
+    audio_file: &String,
     output_folder: &String,
 ) -> HashMap<usize, String> {
     let mut ffmpeg_command = create_base_ffmpeg_command(&audio_file);
     let mut voice_references = HashMap::new();
     for current_srt_fragment in srt_fragments {
         let voice_ref_idx = current_srt_fragment.index;
-        let (start, end) = match current_srt_fragment.timing.split_once("-->") {
-            Some((start, end)) => (start.trim().replace(',', "."), end.trim().replace(',', ".")),
-            None => panic!("Failed to read SRT timings at SRT index: {}", voice_ref_idx),
-        };
+        let (start, end) = get_srt_timings(current_srt_fragment);
         let mut output_filename = format!("{}_ref.wav", voice_ref_idx);
         // Insert before adding the path for ffmpeg
         voice_references.insert(voice_ref_idx, output_filename.to_string());
@@ -69,19 +67,14 @@ pub fn create_voice_references(
 
 // Dubs a line
 // Creates a index_dubbed.mp3 file
-pub async fn dub_line(
-    dubber_config: &DubberConfig,
-    output_folder: &String,
-    line_to_dub: &String,
-    voice_ref: &String,
-) {
+pub async fn dub_line(dubber_config: &DubberConfig, line_to_dub: &String, voice_ref: &String) {
     // The output filename is: output_folder + the index of the voice ref + _dubbed.mp3
     // the trimming is kinda finnicky
     let voice_ref_idx = voice_ref.trim_end_matches("_ref.wav").to_string();
     let mut output_filename = {
         let mut temp_clone = voice_ref_idx.clone();
         temp_clone.push_str("_dubbed.mp3");
-        temp_clone.insert_str(0, output_folder);
+        temp_clone.insert_str(0, &dubber_config.output_folder);
         temp_clone
     };
     match openai_tts_send_prompt(
@@ -121,11 +114,10 @@ pub async fn dub_line(
 // Dub an SRT file
 // Requires a running LLM
 // WIP
-pub fn dub_srt_file(
+pub async fn dub_srt_file(
     srt_fragments: &Vec<SRTFragment>,
     dubber_config: &DubberConfig,
     voice_references: HashMap<usize, String>,
-    output_folder: &String,
 ) {
     for current_srt_fragment in srt_fragments {
         // TODO: Do not use unwrap
@@ -143,12 +135,6 @@ pub fn dub_srt_file(
             }
         };
         println!("Voice ref file: {}", &voice_ref);
-        // dub_line(
-        //     dubber_config,
-        //     output_folder,
-        //     &current_srt_fragment.line,
-        //     &voice_ref,
-        // )
-        // .await;
+        dub_line(dubber_config, &current_srt_fragment.line, &voice_ref).await;
     }
 }
