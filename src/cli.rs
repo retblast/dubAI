@@ -1,8 +1,15 @@
 use crate::config::DubConfig;
 use crate::config::set_dubber_config;
 use crate::config::set_translator_config;
+use crate::dub::create_voice_references;
+use crate::dub::dub_srt_file;
+use crate::file_ops::open_input_file;
+use crate::file_ops::open_output_file;
+use crate::srt_ops::get_srt_fragments;
+use crate::srt_ops::translate_srt_file;
 use clap::Parser;
 use clap::Subcommand;
+use llm_connect::connection::koboldcpp_start;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -12,6 +19,19 @@ struct TranslatorCLI {
     #[arg(default_value = "English", short = 'l', long)]
     input_language: Option<String>,
 
+    /// Model to use for translation
+    #[arg(short, long)]
+    model: Option<String>,
+
+    /// Model to use for translation
+    #[arg(short, long)]
+    // u8 ought to be enough for a line, I reckon?
+    max_tokens: Option<u8>,
+
+    /// Model to use for translation
+    #[arg(short, long)]
+    temperature: Option<f32>,
+
     /// Language to translate to (fed to the AI)
     #[arg(default_value = "English", short = 'L', long)]
     output_language: Option<String>,
@@ -20,7 +40,7 @@ struct TranslatorCLI {
     #[arg(long)]
     address: Option<String>,
 
-    /// Extra context for the dubbing LLMs
+    /// Extra context for the translation LLMs
     #[arg(long)]
     extra_context: Option<String>,
 
@@ -38,6 +58,12 @@ struct DubberCLI {
     /// URL address of the LLM
     #[arg(long)]
     address: Option<String>,
+    /// Model to use for dubbing
+    #[arg(short, long)]
+    model: Option<String>,
+    /// Wavtokenizer to use for dubbing
+    #[arg(short, long)]
+    wavtokenizer: Option<String>,
     /// Input audio file to use for dubbing
     #[arg(long)]
     input_audio: Option<String>,
@@ -75,10 +101,31 @@ fn setup_translator_cli(options: TranslatorCLI, dub_config: &mut DubConfig) {
     let input_language;
     let output_language;
     let llm_address;
+    let model;
+    let max_tokens;
+    let temperature;
     let extra_context;
     let input_srt_path;
     let output_srt_path;
 
+    model = match options.model {
+        Some(model) => model,
+        None => panic!("No model for translation specified."),
+    };
+    max_tokens = match options.max_tokens {
+        Some(max_tokens) => max_tokens,
+        None => {
+            println!("No maximum number of tokens for translation specified. Using 255.");
+            255
+        }
+    };
+    temperature = match options.temperature {
+        Some(temperature) => temperature,
+        None => {
+            println!("No temperature for translation specified. Using 0.6.");
+            0.6
+        }
+    };
     input_language = match options.input_language {
         Some(input_language) => input_language,
         None => panic!("No language to dub from specified."),
@@ -116,6 +163,9 @@ fn setup_translator_cli(options: TranslatorCLI, dub_config: &mut DubConfig) {
     set_translator_config(
         dub_config,
         llm_address,
+        model,
+        temperature,
+        max_tokens,
         input_language,
         output_language,
         extra_context,
@@ -129,12 +179,26 @@ fn setup_dubber_cli(options: DubberCLI, dub_config: &mut DubConfig) {
         Some(address) => address,
         None => panic!("No URL address for the dubber LLM connection has been specified."),
     };
+    let model = match options.model {
+        Some(model) => model,
+        None => panic!("No model for dubbing specified."),
+    };
+    let wavtokenizer = match options.wavtokenizer {
+        Some(model) => model,
+        None => panic!("No wavtokenizer for dubbing specified."),
+    };
     let input_audio = match options.input_audio {
         Some(audio) => audio,
         None => panic!("No input audio for the dubber LLM has been specified."),
     };
     let output_folder = match options.output_folder {
-        Some(folder) => folder,
+        Some(mut dir) => {
+            // Append "/" if necessary
+            if dir.chars().last() != Some('/') {
+                dir.push('/');
+            }
+            dir
+        }
         None => panic!("No output folder for the dubber LLM has been specified."),
     };
     let input_srt = match options.input_srt {
@@ -162,6 +226,8 @@ fn setup_dubber_cli(options: DubberCLI, dub_config: &mut DubConfig) {
     set_dubber_config(
         dub_config,
         llm_address,
+        model,
+        wavtokenizer,
         input_audio,
         input_srt,
         voice_refs_dir,
@@ -170,10 +236,53 @@ fn setup_dubber_cli(options: DubberCLI, dub_config: &mut DubConfig) {
     );
 }
 
-pub fn setup_from_cli(dub_config: &mut DubConfig) {
+pub async fn setup_from_cli(dub_config: &mut DubConfig) {
     let cli = Cli::parse();
     match cli.mode {
-        Mode::Translate(options) => setup_translator_cli(options, dub_config),
-        Mode::Dub(options) => setup_dubber_cli(options, dub_config),
+        Mode::Translate(options) => {
+            setup_translator_cli(options, dub_config);
+            let srt_path = PathBuf::from(&dub_config.translator_config.input_srt_path);
+            let srt_file = open_input_file(&srt_path);
+            let output_srt_path = PathBuf::from(&dub_config.translator_config.output_srt_path);
+            let output_srt_file = open_output_file(&output_srt_path);
+            let srt_fragments = get_srt_fragments(&srt_file);
+            translate_srt_file(
+                &srt_fragments,
+                &dub_config.translator_config,
+                &output_srt_file,
+            )
+            .await;
+            koboldcpp_start(
+                &"chat".to_string(),
+                &"localhost".to_string(),
+                &5001,
+                &dub_config.translator_config.model,
+                &"".to_owned(),
+                &dub_config.dubber_config.voice_refs_dir,
+            )
+            .await;
+        }
+        Mode::Dub(options) => {
+            setup_dubber_cli(options, dub_config);
+            let srt_path = PathBuf::from(&dub_config.dubber_config.input_srt);
+            let srt_file = open_input_file(&srt_path);
+            let srt_fragments = get_srt_fragments(&srt_file);
+            let voice_refs = create_voice_references(
+                &srt_fragments,
+                &dub_config.dubber_config.input_audio,
+                &dub_config.dubber_config.voice_refs_dir,
+            );
+            println!("Voice references: {:#?}", voice_refs);
+            koboldcpp_start(
+                &"tts".to_string(),
+                &"localhost".to_string(),
+                &5001,
+                &dub_config.dubber_config.model,
+                &dub_config.dubber_config.wavtokenizer,
+                &dub_config.dubber_config.voice_refs_dir,
+            )
+            .await;
+            dub_srt_file(&srt_fragments, &dub_config.dubber_config, voice_refs).await;
+        }
     }
 }

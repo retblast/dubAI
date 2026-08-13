@@ -31,7 +31,7 @@ pub fn open_output_file(output_string_path: &PathBuf) -> File {
     return output_file;
 }
 
-pub fn write_srt_file(output_fragment: &SRTFragment, output_file: File) -> () {
+pub fn write_srt_file(output_fragment: &SRTFragment, output_file: &File) -> () {
     let mut buffered_writer = BufWriter::new(output_file);
     match write!(
         buffered_writer,

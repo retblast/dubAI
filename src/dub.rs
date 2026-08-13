@@ -4,9 +4,8 @@ use crate::srt_ops::get_srt_timings;
 use ffmpeg_sidecar::command::FfmpegCommand;
 use llm_connect::connection::openai_tts_send_prompt;
 use std::collections::HashMap;
+use std::fs::File;
 use std::path::Path;
-use std::path::PathBuf;
-use std::str::FromStr;
 
 use tokio::fs;
 
@@ -29,36 +28,39 @@ pub fn create_voice_references(
         let voice_ref_idx = current_srt_fragment.index;
         let (start, end) = get_srt_timings(current_srt_fragment);
         let mut output_filename = format!("{}_ref.wav", voice_ref_idx);
+
         // Insert before adding the path for ffmpeg
         voice_references.insert(voice_ref_idx, output_filename.to_string());
         output_filename.insert_str(0, output_folder);
 
-        // let output_path = match PathBuf::from_str(&output_filename.as_str()) {
-        //     Ok(path) => path,
-        //     Err(why) => {
-        //         panic!(
-        //             "Failed to get path for {}, because of {}",
-        //             &output_filename, why
-        //         );
-        //     }
-        // };
         // Code to create the file
         ffmpeg_command.args(["-ss", format!("{}", start).as_str()]);
         ffmpeg_command.args(["-to", format!("{}", end).as_str()]);
         ffmpeg_command.output(&output_filename.as_str());
 
-        match ffmpeg_command.spawn() {
-            Ok(mut child) => match child.wait() {
-                Ok(..) => println!("Created {}", &output_filename),
-                Err(why) => println!(
-                    "Failed to create {}_ref.wav, because of: {}",
-                    voice_ref_idx, why
-                ),
-            },
-            Err(why) => println!(
-                "Failed to create {}_ref.wav, because of: {}",
-                voice_ref_idx, why
-            ),
+        // Check if output file already exists
+        match File::open(&output_filename) {
+            Ok(_) => {
+                println!(
+                    "Dubbed file already created: {}, skipping...",
+                    &output_filename
+                );
+            }
+            Err(_) => {
+                match ffmpeg_command.spawn() {
+                    Ok(mut child) => match child.wait() {
+                        Ok(..) => println!("Created {}", &output_filename),
+                        Err(why) => println!(
+                            "Failed to create {}_ref.wav, because of: {}",
+                            voice_ref_idx, why
+                        ),
+                    },
+                    Err(why) => println!(
+                        "Failed to create {}_ref.wav, because of: {}",
+                        voice_ref_idx, why
+                    ),
+                };
+            }
         };
         ffmpeg_command = create_base_ffmpeg_command(&audio_file);
     }
@@ -71,12 +73,33 @@ pub async fn dub_line(dubber_config: &DubberConfig, line_to_dub: &String, voice_
     // The output filename is: output_folder + the index of the voice ref + _dubbed.mp3
     // the trimming is kinda finnicky
     let voice_ref_idx = voice_ref.trim_end_matches("_ref.wav").to_string();
-    let mut output_filename = {
+
+    let output_filename = {
         let mut temp_clone = voice_ref_idx.clone();
         temp_clone.push_str("_dubbed.mp3");
         temp_clone.insert_str(0, &dubber_config.output_folder);
         temp_clone
     };
+    let current_dir = match std::env::current_dir() {
+        Ok(cwd) => cwd,
+        Err(_) => panic!("Couldn't get current directory"),
+    };
+    let dubbed_file_path = Path::new(current_dir.as_path()).join(&output_filename);
+
+    // Check if output file already exists
+    match File::open(&dubbed_file_path) {
+        Ok(_) => {
+            println!(
+                "Dubbed file already created: {}, skipping...",
+                dubbed_file_path
+                    .to_str()
+                    .expect("Somehow failed to display the dubbed_file_path variable")
+            );
+            return;
+        }
+        Err(_) => {}
+    };
+
     match openai_tts_send_prompt(
         &dubber_config.llm_address,
         &output_filename,
@@ -87,12 +110,7 @@ pub async fn dub_line(dubber_config: &DubberConfig, line_to_dub: &String, voice_
     .await
     {
         Ok(_) => {
-            let current_dir = match std::env::current_dir() {
-                Ok(cwd) => cwd,
-                Err(_) => panic!("Couldn't get current directory"),
-            };
-            let dubbing_path = Path::new(current_dir.as_path()).join(&output_filename);
-            match fs::rename(&output_filename, dubbing_path).await {
+            match fs::rename(&output_filename, dubbed_file_path).await {
                 Ok(_) => {}
                 Err(why) => println!(
                     "Couldn't put the generated audio file in its folder, because {}",
@@ -113,7 +131,6 @@ pub async fn dub_line(dubber_config: &DubberConfig, line_to_dub: &String, voice_
 
 // Dub an SRT file
 // Requires a running LLM
-// WIP
 pub async fn dub_srt_file(
     srt_fragments: &Vec<SRTFragment>,
     dubber_config: &DubberConfig,

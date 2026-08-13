@@ -9,6 +9,8 @@ pub struct DubConfig {
 #[derive(Default)]
 pub struct DubberConfig {
     pub llm_address: String,
+    pub model: String,
+    pub wavtokenizer: String,
     pub input_audio: String,
     pub input_srt: String,
     pub voice_refs_dir: String,
@@ -22,6 +24,9 @@ pub struct DubberConfig {
 #[derive(Default)]
 pub struct TranslatorConfig {
     pub llm_address: String,
+    pub model: String,
+    pub temperature: f32,
+    pub max_tokens: u8,
     pub input_language: String,
     pub output_language: String,
     pub extra_context: String,
@@ -32,6 +37,9 @@ pub struct TranslatorConfig {
 pub fn set_translator_config(
     dub_config: &mut DubConfig,
     llm_address: String,
+    model: String,
+    temperature: f32,
+    max_tokens: u8,
     input_language: String,
     output_language: String,
     extra_context: String,
@@ -40,6 +48,9 @@ pub fn set_translator_config(
 ) {
     let translator_config = TranslatorConfig {
         llm_address: llm_address,
+        model: model,
+        temperature: temperature,
+        max_tokens: max_tokens,
         input_language: input_language,
         output_language: output_language,
         extra_context: extra_context,
@@ -52,6 +63,8 @@ pub fn set_translator_config(
 pub fn set_dubber_config(
     dub_config: &mut DubConfig,
     llm_address: String,
+    model: String,
+    wavtokenizer: String,
     input_audio: String,
     input_srt: String,
     voice_refs_dir: String,
@@ -60,6 +73,8 @@ pub fn set_dubber_config(
 ) {
     let dubber_config = DubberConfig {
         llm_address: llm_address,
+        model: model,
+        wavtokenizer: wavtokenizer,
         input_audio: input_audio,
         input_srt: input_srt,
         voice_refs_dir: voice_refs_dir,

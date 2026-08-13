@@ -1,4 +1,5 @@
-use crate::config::DubConfig;
+use crate::config::TranslatorConfig;
+use crate::file_ops::write_srt_file;
 use llm_connect::connection::openai_chat_send_prompt;
 use std::fs::File;
 use std::io::BufRead;
@@ -27,11 +28,10 @@ pub fn get_srt_timings(srt_fragment: &SRTFragment) -> (String, String) {
 pub fn get_srt_fragments(srt_file: &File) -> Vec<SRTFragment> {
     let mut vector_fragments = Vec::new();
     let mut buffered_srt_file = BufReader::new(srt_file);
-    let mut finished_reading = false;
     let mut current_line = String::new();
     let mut current_index = 0;
     let mut current_timing = String::new();
-    let mut finished_reading = false;
+    let finished_reading = false;
 
     let mut current_fragment = SRTFragment {
         ..Default::default()
@@ -45,7 +45,6 @@ pub fn get_srt_fragments(srt_file: &File) -> Vec<SRTFragment> {
             Ok(1_usize..) => {}
             // Finished reading the fragment
             Ok(0_usize) => {
-                finished_reading = true;
                 return vector_fragments;
             }
         }
@@ -62,10 +61,15 @@ pub fn get_srt_fragments(srt_file: &File) -> Vec<SRTFragment> {
                     timing: current_timing,
                     line: current_line.clone().trim().to_owned(),
                 };
+                // println!("current_index: {}", current_fragment.index);
+                // println!("current_timing_pot: {}", current_fragment.timing);
+                // println!("current_line: {}", current_fragment.line);
+
                 vector_fragments.push(current_fragment);
                 // Clean up for next iteration
                 current_index = 0;
                 current_timing = "".to_owned();
+                current_line = "".to_owned();
             }
         }
         current_index = match current_line.trim().parse::<usize>() {
@@ -77,35 +81,25 @@ pub fn get_srt_fragments(srt_file: &File) -> Vec<SRTFragment> {
     return vector_fragments;
 }
 
-// TODO: Fix
-// pub async fn process_srt_file(
-//     input_srt_file: File,
-//     output_srt_file: File,
-//     dub_config: &DubConfig,
-// ) -> () {
-//     let mut buffered_reader = BufReader::new(input_srt_file);
-//     let mut current_srt_fragment = Vec::new();
-//     let mut translated_fragment: SRTFragment;
-//     let mut finished_reading = false;
-
-//     (current_srt_fragment, finished_reading) = get_srt_fragments(&input_srt_file);
-
-//     // Finished reading = finished translating
-//     if finished_reading {
-//         return;
-//     }
-
-//     translated_fragment = current_srt_fragment.clone();
-//     println!("Translating: {}", &current_srt_fragment.line);
-//     // TODO: implement translate_line
-//     translated_fragment.line = match translate_line(&current_srt_fragment.line, &dub_config).await {
-//         Ok(string) => string,
-//         Err(why) => {
-//             panic!("Failed to translate the current line, {}", why);
-//         }
-//     };
-//     write_srt_file(&translated_fragment, output_srt_file);
-// }
+pub async fn translate_srt_file(
+    srt_fragments: &Vec<SRTFragment>,
+    translator_config: &TranslatorConfig,
+    output_file: &File,
+) -> () {
+    for current_srt_fragment in srt_fragments {
+        let mut translated_fragment = current_srt_fragment.clone();
+        println!("Translating: {}", &current_srt_fragment.line);
+        // TODO: implement translate_line
+        translated_fragment.line =
+            match translate_line(&current_srt_fragment.line, &translator_config).await {
+                Ok(string) => string,
+                Err(why) => {
+                    panic!("Failed to translate the current line, {}", why);
+                }
+            };
+        write_srt_file(&translated_fragment, output_file);
+    }
+}
 
 // checks the progress of the translated srt
 // I assume that it is well formed... so
@@ -140,12 +134,12 @@ pub fn get_translated_srt_progress(read_buffer: &mut BufReader<&File>) -> u16 {
 // Translates a given line
 pub async fn translate_line(
     line: &String,
-    dub_config: &DubConfig,
+    translator_config: &TranslatorConfig,
 ) -> Result<String, Box<dyn std::error::Error>> {
     // Because we can't access fields in format!
-    let input_language = &dub_config.translator_config.input_language;
-    let output_language = &dub_config.translator_config.output_language;
-    let extra_context = &dub_config.translator_config.extra_context;
+    let input_language = &translator_config.input_language;
+    let output_language = &translator_config.output_language;
+    let extra_context = &translator_config.extra_context;
 
     let system_prompt = format!(
         "
@@ -160,11 +154,11 @@ pub async fn translate_line(
     );
     let user_prompt = format!("This is the line that you have to translate: {line}");
     let response = openai_chat_send_prompt(
-        &dub_config.translator_config.llm_address,
+        &translator_config.llm_address,
         &system_prompt,
         &user_prompt,
-        &0.6,
-        &300,
+        &translator_config.temperature,
+        &(translator_config.max_tokens as u32),
     )
     .await?;
     return Ok(response.choices[0].message.content.trim().to_string());
