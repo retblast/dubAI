@@ -6,7 +6,7 @@ use crate::dub::dub_srt_file;
 use crate::file_ops::open_input_file;
 use crate::file_ops::open_output_file;
 use crate::srt_ops::get_srt_fragments;
-use crate::srt_ops::translate_srt_file;
+use crate::translate::translate_loaded_srt_fragments;
 use clap::Parser;
 use clap::Subcommand;
 use llm_connect::connection::koboldcpp_start;
@@ -97,6 +97,13 @@ struct Cli {
     mode: Mode,
 }
 
+
+fn parse_url_address(address: String) -> (String, String) {
+
+    let (host: String::new(), port: String::new()) = address.split_terminator(':').collect();
+    return ("You gae".to_string(), "gae".to_string())
+}
+
 fn setup_translator_cli(options: TranslatorCLI, dub_config: &mut DubConfig) {
     let input_language;
     let output_language;
@@ -137,7 +144,9 @@ fn setup_translator_cli(options: TranslatorCLI, dub_config: &mut DubConfig) {
     llm_address = match options.address {
         Some(address) => address,
         None => {
-            panic!("No URL address for the translator LLM connection has been specified.")
+            println!("No URL address for the translator LLM connection has been specified.");
+            println!("Assuming: https://localhost");
+            "https://localhost".to_string()
         }
     };
     extra_context = match options.extra_context {
@@ -177,7 +186,11 @@ fn setup_translator_cli(options: TranslatorCLI, dub_config: &mut DubConfig) {
 fn setup_dubber_cli(options: DubberCLI, dub_config: &mut DubConfig) {
     let llm_address = match options.address {
         Some(address) => address,
-        None => panic!("No URL address for the dubber LLM connection has been specified."),
+        None => {
+            println!("No URL address for the translator LLM connection has been specified.");
+            println!("Assuming: https://localhost");
+            "https://localhost".to_string()
+        }
     };
     let model = match options.model {
         Some(model) => model,
@@ -246,12 +259,6 @@ pub async fn setup_from_cli(dub_config: &mut DubConfig) {
             let output_srt_path = PathBuf::from(&dub_config.translator_config.output_srt_path);
             let output_srt_file = open_output_file(&output_srt_path);
             let srt_fragments = get_srt_fragments(&srt_file);
-            translate_srt_file(
-                &srt_fragments,
-                &dub_config.translator_config,
-                &output_srt_file,
-            )
-            .await;
             koboldcpp_start(
                 &"chat".to_string(),
                 &"localhost".to_string(),
@@ -259,6 +266,12 @@ pub async fn setup_from_cli(dub_config: &mut DubConfig) {
                 &dub_config.translator_config.model,
                 &"".to_owned(),
                 &dub_config.dubber_config.voice_refs_dir,
+            )
+            .await;
+            translate_loaded_srt_fragments(
+                &srt_fragments,
+                &dub_config.translator_config,
+                &output_srt_file,
             )
             .await;
         }

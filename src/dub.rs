@@ -131,6 +131,7 @@ pub async fn dub_line(dubber_config: &DubberConfig, line_to_dub: &String, voice_
 
 // Dub an SRT file
 // Requires a running LLM
+// Produces files in the specified directory
 pub async fn dub_srt_file(
     srt_fragments: &Vec<SRTFragment>,
     dubber_config: &DubberConfig,
