@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 
 #[derive(Default)]
-pub struct DubConfig {
+pub struct DubAIConfig {
+    // TODO: Set transcriber config
+    // put transcriber_config: TranscriberConfig,
     pub translator_config: TranslatorConfig,
     pub dubber_config: DubberConfig,
 }
@@ -21,6 +23,30 @@ pub struct DubberConfig {
     pub output_folder: String,
 }
 
+impl DubberConfig {
+    pub fn new(
+        llm_address: String,
+        model: String,
+        wavtokenizer: String,
+        input_audio: String,
+        input_srt: String,
+        voice_refs_dir: String,
+        output_language: String,
+        output_folder: String,
+    ) -> Self {
+        Self {
+            llm_address,
+            model,
+            wavtokenizer,
+            input_audio,
+            input_srt,
+            voice_refs_dir,
+            output_language,
+            output_folder,
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct TranslatorConfig {
     pub llm_address: String,
@@ -34,52 +60,28 @@ pub struct TranslatorConfig {
     pub output_srt_path: PathBuf,
 }
 
-pub fn set_translator_config(
-    dub_config: &mut DubConfig,
-    llm_address: String,
-    model: String,
-    temperature: f32,
-    max_tokens: u8,
-    input_language: String,
-    output_language: String,
-    extra_context: String,
-    input_srt_path: PathBuf,
-    output_srt_path: PathBuf,
-) {
-    let translator_config = TranslatorConfig {
-        llm_address: llm_address,
-        model: model,
-        temperature: temperature,
-        max_tokens: max_tokens,
-        input_language: input_language,
-        output_language: output_language,
-        extra_context: extra_context,
-        input_srt_path: input_srt_path,
-        output_srt_path: output_srt_path,
-    };
-    dub_config.translator_config = translator_config;
-}
-
-pub fn set_dubber_config(
-    dub_config: &mut DubConfig,
-    llm_address: String,
-    model: String,
-    wavtokenizer: String,
-    input_audio: String,
-    input_srt: String,
-    voice_refs_dir: String,
-    output_language: String,
-    output_folder: String,
-) {
-    let dubber_config = DubberConfig {
-        llm_address: llm_address,
-        model: model,
-        wavtokenizer: wavtokenizer,
-        input_audio: input_audio,
-        input_srt: input_srt,
-        voice_refs_dir: voice_refs_dir,
-        output_language: output_language,
-        output_folder: output_folder,
-    };
-    dub_config.dubber_config = dubber_config;
+impl TranslatorConfig {
+    pub fn new(
+        llm_address: String,
+        model: String,
+        temperature: f32,
+        max_tokens: u8,
+        input_language: String,
+        output_language: String,
+        extra_context: String,
+        input_srt_path: PathBuf,
+        output_srt_path: PathBuf,
+    ) -> Self {
+        Self {
+            llm_address,
+            model,
+            temperature,
+            max_tokens,
+            input_language,
+            output_language,
+            extra_context,
+            input_srt_path,
+            output_srt_path,
+        }
+    }
 }
