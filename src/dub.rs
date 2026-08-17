@@ -9,24 +9,31 @@ use std::path::Path;
 
 use tokio::fs;
 
-fn create_base_ffmpeg_command(audio_file: &String) -> FfmpegCommand {
+fn create_base_ffmpeg_command(audio_file: &str) -> FfmpegCommand {
     let mut ffmpeg_command = FfmpegCommand::new();
     ffmpeg_command.input(audio_file);
     ffmpeg_command.codec_audio("mp3");
     ffmpeg_command.args(["-b:a", "320k"]);
     ffmpeg_command
 }
+
 // Creates mp3 files that are dialogue, taken from the SRT file
 pub fn create_voice_references(
     srt_fragments: &Vec<SRTFragment>,
-    audio_file: &String,
-    output_folder: &String,
+    audio_file: &str,
+    output_folder: &str,
 ) -> HashMap<usize, String> {
     let mut ffmpeg_command = create_base_ffmpeg_command(&audio_file);
     let mut voice_references = HashMap::new();
     for current_srt_fragment in srt_fragments {
         let voice_ref_idx = current_srt_fragment.index;
-        let (start, end) = get_srt_timings(current_srt_fragment);
+        let (start, end) = match get_srt_timings(current_srt_fragment) {
+            Ok((start, end)) => (start, end),
+            Err(why) => {
+                println!("Parsing a SRT timing failed: {why:?}");
+                continue;
+            }
+        };
         let mut output_filename = format!("{}_ref.wav", voice_ref_idx);
 
         // Insert before adding the path for ffmpeg
@@ -69,22 +76,21 @@ pub fn create_voice_references(
 
 // Dubs a line
 // Creates a index_dubbed.mp3 file
-pub async fn dub_line(dubber_config: &DubberConfig, line_to_dub: &String, voice_ref: &String) {
+pub async fn dub_line(dubber_config: &DubberConfig, line_to_dub: &str, voice_ref: &str) {
     // The output filename is: output_folder + the index of the voice ref + _dubbed.mp3
     // the trimming is kinda finnicky
     let voice_ref_idx = voice_ref.trim_end_matches("_ref.wav").to_string();
 
+    // Set the output filename as
+    // output_folder/voice_ref_idx + _dubbed.mp3
     let output_filename = {
         let mut temp_clone = voice_ref_idx.clone();
         temp_clone.push_str("_dubbed.mp3");
         temp_clone.insert_str(0, &dubber_config.output_folder);
         temp_clone
     };
-    let current_dir = match std::env::current_dir() {
-        Ok(cwd) => cwd,
-        Err(_) => panic!("Couldn't get current directory"),
-    };
-    let dubbed_file_path = Path::new(current_dir.as_path()).join(&output_filename);
+
+    let dubbed_file_path = Path::new(&dubber_config.output_folder).join(&output_filename);
 
     // Check if output file already exists
     match File::open(&dubbed_file_path) {
@@ -138,7 +144,6 @@ pub async fn dub_srt_file(
     voice_references: HashMap<usize, String>,
 ) {
     for current_srt_fragment in srt_fragments {
-        // TODO: Do not use unwrap
         let voice_ref_idx: usize = current_srt_fragment.index;
         println!("Voice ref idx: {}", &voice_ref_idx);
         let voice_ref = match voice_references.get(&voice_ref_idx) {
