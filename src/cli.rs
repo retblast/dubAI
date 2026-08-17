@@ -25,8 +25,8 @@ struct TranslatorCLI {
 
     /// Max tokens for the translator
     #[arg(short, long)]
-    // u8 ought to be enough for a line, I reckon?
-    max_tokens: Option<u8>,
+    // u16 ought to be enough for a line, I reckon?
+    max_tokens: Option<u16>,
 
     /// Temperature for the translator
     #[arg(short, long)]
@@ -66,10 +66,10 @@ struct DubberCLI {
     wavtokenizer: String,
     /// Input audio file to use for dubbing
     #[arg(long, required = true)]
-    input_audio: Option<String>,
+    input_audio: String,
     /// Output audio folder to store the dubbed files on
-    #[arg(long)]
-    output_folder: Option<String>,
+    #[arg(long, required = true)]
+    output_folder: String,
     /// Input srt file to use for dubbing
     #[arg(long, required = true)]
     input_srt: String,
@@ -99,7 +99,7 @@ struct Cli {
 }
 
 // extract the host and address
-fn parse_url_address(address: &String) -> (String, u32) {
+fn parse_url_address(address: &str) -> (String, u32) {
     let (host, port): (String, u32) = match address.rsplit_once(':') {
         Some((host_string, address_string)) => (
             host_string.to_string(),
@@ -195,19 +195,14 @@ fn setup_dubber_cli(options: DubberCLI, dubai_config: &mut DubAIConfig) {
     };
     let model = options.model;
     let wavtokenizer = options.wavtokenizer;
-    let input_audio = match options.input_audio {
-        Some(audio) => audio,
-        None => panic!("No input audio for the dubber LLM has been specified."),
-    };
-    let output_folder = match options.output_folder {
-        Some(mut dir) => {
-            // Append "/" if necessary
-            if dir.chars().last() != Some('/') {
-                dir.push('/');
-            }
-            dir
+    let input_audio = options.input_audio;
+    let output_folder = {
+        let mut temp_dir = options.output_folder;
+        // Append "/" if necessary
+        if temp_dir.chars().last() != Some('/') {
+            temp_dir.push('/');
         }
-        None => panic!("No output folder for the dubber LLM has been specified."),
+        temp_dir
     };
     let input_srt = options.input_srt;
     let voice_refs_dir = {
@@ -274,7 +269,7 @@ pub async fn setup_from_cli(dubai_config: &mut DubAIConfig) {
                 &dubai_config.dubber_config.input_audio,
                 &dubai_config.dubber_config.voice_refs_dir,
             );
-            let (host, port) = parse_url_address(&dubai_config.translator_config.llm_address);
+            let (host, port) = parse_url_address(&dubai_config.dubber_config.llm_address);
             println!("Voice references: {:#?}", voice_refs);
             koboldcpp_start(
                 &"tts".to_string(),
