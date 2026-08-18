@@ -1,9 +1,10 @@
-use crate::srt_ops::SRTFragment;
 use crate::config::TranslatorConfig;
-use std::fs::File;
 use crate::file_ops::write_srt_file;
+use crate::srt_ops::SRTFragment;
 use llm_connect::connection::openai_chat_send_prompt;
-
+use std::fs::File;
+use std::io::BufRead;
+use std::io::BufReader;
 
 // Translates the loaded SRT fragments
 // and saves them in the output file
@@ -17,12 +18,12 @@ pub async fn translate_loaded_srt_fragments(
         println!("Translating: {}", &current_srt_fragment.line);
         // TODO: implement translate_line
         translated_fragment.line =
-        match translate_line(&current_srt_fragment.line, &translator_config).await {
-            Ok(string) => string,
-            Err(why) => {
-                panic!("Failed to translate the current line, {}", why);
-            }
-        };
+            match translate_line(&current_srt_fragment.line, &translator_config).await {
+                Ok(string) => string,
+                Err(why) => {
+                    panic!("Failed to translate the current line, {}", why);
+                }
+            };
         write_srt_file(&translated_fragment, output_file);
     }
 }
@@ -85,6 +86,7 @@ pub async fn translate_line(
         &user_prompt,
         &translator_config.temperature,
         &(translator_config.max_tokens as u32),
+        5,
     )
     .await?;
     return Ok(response.choices[0].message.content.trim().to_string());

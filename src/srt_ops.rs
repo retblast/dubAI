@@ -9,15 +9,22 @@ pub struct SRTFragment {
     pub line: String,
 }
 
-pub fn get_srt_timings(srt_fragment: &SRTFragment) -> (String, String) {
+#[derive(Debug)]
+pub enum SRTError {
+    // We error out at an index number
+    TimingsParseError { index: usize },
+}
+
+pub fn get_srt_timings(srt_fragment: &SRTFragment) -> Result<(String, String), SRTError> {
     let (start, end) = match srt_fragment.timing.split_once("-->") {
         Some((start, end)) => (start.trim().replace(',', "."), end.trim().replace(',', ".")),
-        None => panic!(
-            "Failed to read SRT timings at SRT index: {}",
-            srt_fragment.index
-        ),
+        None => {
+            return Err(SRTError::TimingsParseError {
+                index: srt_fragment.index,
+            });
+        }
     };
-    return (start, end);
+    return Ok((start, end));
 }
 
 // Reads from a buffer, returns a SRTFragment and the buffer, for the next iteration
@@ -28,12 +35,8 @@ pub fn get_srt_fragments(srt_file: &File) -> Vec<SRTFragment> {
     let mut current_line = String::new();
     let mut current_index = 0;
     let mut current_timing = String::new();
-    let finished_reading = false;
 
-    let mut current_fragment = SRTFragment {
-        ..Default::default()
-    };
-    while !finished_reading {
+    loop {
         // clear line
         current_line.clear();
         // get a new line
@@ -53,7 +56,7 @@ pub fn get_srt_fragments(srt_file: &File) -> Vec<SRTFragment> {
             } else {
                 // Finally, we also now have the current line, so
                 // assemble the whole fragment
-                current_fragment = SRTFragment {
+                let current_fragment = SRTFragment {
                     index: current_index,
                     timing: current_timing,
                     line: current_line.clone().trim().to_owned(),
@@ -75,6 +78,4 @@ pub fn get_srt_fragments(srt_file: &File) -> Vec<SRTFragment> {
             Ok(number) => number,
         };
     }
-    return vector_fragments;
 }
-

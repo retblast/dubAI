@@ -3,7 +3,8 @@ mod cli;
 mod config;
 mod dub;
 mod file_ops;
-mod mix;
+// Temporarily out of the equation until I re-inspect it
+//mod mix;
 mod srt_ops;
 mod translate;
 

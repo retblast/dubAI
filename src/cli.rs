@@ -9,6 +9,9 @@ use crate::srt_ops::get_srt_fragments;
 use crate::translate::translate_loaded_srt_fragments;
 use clap::Parser;
 use clap::Subcommand;
+use llm_connect::config::KoboldChatConfig;
+use llm_connect::config::KoboldConfig;
+use llm_connect::config::KoboldTTSConfig;
 use llm_connect::connection::koboldcpp_start;
 use std::path::Path;
 use std::path::PathBuf;
@@ -253,15 +256,9 @@ pub async fn setup_from_cli() {
             let output_srt_file = open_output_file(&output_srt_path);
             let srt_fragments = get_srt_fragments(&srt_file);
             let (host, port) = parse_url_address(&dubai_config.translator_config.llm_address);
-            koboldcpp_start(
-                &"chat".to_string(),
-                &host,
-                &port,
-                &dubai_config.translator_config.model,
-                &"".to_owned(),
-                &dubai_config.dubber_config.voice_refs_dir,
-            )
-            .await;
+            let kobold_chat_config = KoboldChatConfig::new(&dubai_config.translator_config.model);
+            let kobold_config = KoboldConfig::new(&host, &port, None, Some(kobold_chat_config));
+            koboldcpp_start(&kobold_config).await;
             translate_loaded_srt_fragments(
                 &srt_fragments,
                 &dubai_config.translator_config,
@@ -280,16 +277,20 @@ pub async fn setup_from_cli() {
                 &dubai_config.dubber_config.voice_refs_dir,
             );
             let (host, port) = parse_url_address(&dubai_config.dubber_config.llm_address);
-            println!("Voice references: {:#?}", voice_refs);
-            koboldcpp_start(
-                &"tts".to_string(),
-                &host,
-                &port,
+            let kobold_tts_config = KoboldTTSConfig::new(
                 &dubai_config.dubber_config.model,
                 &dubai_config.dubber_config.wavtokenizer,
                 &dubai_config.dubber_config.voice_refs_dir,
-            )
-            .await;
+            );
+            // TEST ONLY
+            // println!("llm_address: {}", &dubai_config.dubber_config.llm_address);
+            // println!(
+            //     "llm_address: {:?}",
+            //     parse_url_address(&dubai_config.dubber_config.llm_address)
+            // );
+            let kobold_config = KoboldConfig::new(&host, &port, Some(kobold_tts_config), None);
+            println!("Voice references: {:#?}", voice_refs);
+            koboldcpp_start(&kobold_config).await;
             dub_srt_file(&srt_fragments, &dubai_config.dubber_config, voice_refs).await;
         }
     }

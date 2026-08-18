@@ -105,13 +105,17 @@ pub async fn dub_line(dubber_config: &DubberConfig, line_to_dub: &str, voice_ref
         }
         Err(_) => {}
     };
+    // "http://".to_owned() +
+    // let finaladdress = &dubber_config.llm_address;
 
+    // println!("finaladdress: {}", finaladdress);
     match openai_tts_send_prompt(
         &dubber_config.llm_address,
         &output_filename,
         &"kcpp".to_string(),
-        line_to_dub,
-        voice_ref,
+        &line_to_dub,
+        &voice_ref,
+        5,
     )
     .await
     {
