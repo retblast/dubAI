@@ -117,7 +117,7 @@ fn parse_url_address(address: &str) -> (String, u32) {
     return (host, port);
 }
 
-fn setup_translator_cli(options: TranslatorCLI, dubai_config: &mut DubAIConfig) {
+fn setup_translator_cli(options: TranslatorCLI) -> TranslatorConfig {
     let input_language;
     let output_language;
     let llm_address;
@@ -171,7 +171,7 @@ fn setup_translator_cli(options: TranslatorCLI, dubai_config: &mut DubAIConfig) 
         }
     };
 
-    dubai_config.translator_config = TranslatorConfig::new(
+    let translator_config = TranslatorConfig::new(
         llm_address,
         model,
         temperature,
@@ -182,9 +182,11 @@ fn setup_translator_cli(options: TranslatorCLI, dubai_config: &mut DubAIConfig) 
         input_srt_path,
         output_srt_path,
     );
+
+    translator_config
 }
 
-fn setup_dubber_cli(options: DubberCLI, dubai_config: &mut DubAIConfig) {
+fn setup_dubber_cli(options: DubberCLI) -> DubberConfig {
     let llm_address = match options.address {
         Some(address) => address,
         None => {
@@ -218,7 +220,7 @@ fn setup_dubber_cli(options: DubberCLI, dubai_config: &mut DubAIConfig) {
         None => panic!("No language to dub to specified."),
     };
 
-    dubai_config.dubber_config = DubberConfig::new(
+    let dubber_config = DubberConfig::new(
         llm_address,
         model,
         wavtokenizer,
@@ -228,15 +230,23 @@ fn setup_dubber_cli(options: DubberCLI, dubai_config: &mut DubAIConfig) {
         output_language,
         output_folder,
     );
+
+    dubber_config
 }
 
 // General setup
-pub async fn setup_from_cli(dubai_config: &mut DubAIConfig) {
+pub async fn setup_from_cli() {
     let cli = Cli::parse();
+
+    //TODO: Maybe there's a better way to handle this?
+    let mut dubai_config = DubAIConfig {
+        ..Default::default()
+    };
+
     match cli.mode {
         // Translator setup
         Mode::Translate(options) => {
-            setup_translator_cli(options, dubai_config);
+            dubai_config.translator_config = setup_translator_cli(options);
             let srt_path = PathBuf::from(&dubai_config.translator_config.input_srt_path);
             let srt_file = open_input_file(&srt_path);
             let output_srt_path = PathBuf::from(&dubai_config.translator_config.output_srt_path);
@@ -260,7 +270,7 @@ pub async fn setup_from_cli(dubai_config: &mut DubAIConfig) {
             .await;
         }
         Mode::Dub(options) => {
-            setup_dubber_cli(options, dubai_config);
+            dubai_config.dubber_config = setup_dubber_cli(options);
             let srt_path = PathBuf::from(&dubai_config.dubber_config.input_srt);
             let srt_file = open_input_file(&srt_path);
             let srt_fragments = get_srt_fragments(&srt_file);
