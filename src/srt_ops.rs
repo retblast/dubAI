@@ -1,81 +1,182 @@
 use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
+use std::time::Duration;
+
+#[derive(Default, Clone, Debug, PartialEq, Copy)]
+struct SRTTiming {
+    start: Duration,
+    end: Duration,
+}
+
+impl SRTTiming {
+    pub fn default() -> SRTTiming {
+        return SRTTiming {
+            start: Duration::default(),
+            end: Duration::default(),
+        };
+    }
+    pub fn empty(&self) -> bool {
+        let default = SRTTiming::default();
+        if *self == default {
+            return true;
+        }
+        return false;
+    }
+}
 
 #[derive(Default, Clone, Debug)]
 pub struct SRTFragment {
     pub index: usize,
-    pub timing: String,
-    pub line: String,
+    pub timing: SRTTiming,
+    pub subtitle_lines: Vec<String>,
 }
 
 #[derive(Debug)]
 pub enum SRTError {
     // We error out at an index number
     TimingsParseError { index: usize },
+    TimestampParseError,
+    IndexParseError,
+    MalformedBlockError,
 }
 
-pub fn get_srt_timings(srt_fragment: &SRTFragment) -> Result<(String, String), SRTError> {
-    let (start, end) = match srt_fragment.timing.split_once("-->") {
-        Some((start, end)) => (start.trim().replace(',', "."), end.trim().replace(',', ".")),
-        None => {
-            return Err(SRTError::TimingsParseError {
-                index: srt_fragment.index,
-            });
+fn parse_timestamp(timestamp: &str) -> Result<Duration, SRTError> {
+    // format is 01:02:03,400
+    let timestamp_parts: Vec<&str> = timestamp.split([':', ',']).collect();
+    let mut timestamp_rev_iter = timestamp_parts.iter().rev();
+    // The parsed value from start's last item times 10⁶ turns the miliseconds into nanoseconds
+    let timestamp_nanos = match timestamp_rev_iter.next() {
+        Some(next_item) => match next_item.parse::<u32>() {
+            Ok(parsed_item) => parsed_item,
+            Err(_) => {
+                return Err(SRTError::TimestampParseError);
+            }
+        },
+        None => return Err(SRTError::TimestampParseError),
+    };
+    // Now parse the secs for the duration
+    let timestamp_secs = {
+        let mut timestamp_secs_temp: u64 = 0;
+        for (index, portion) in timestamp_rev_iter.enumerate() {
+            // TODO: Improve the msg
+            let parsed_portion = match portion.parse::<u64>() {
+                Ok(parsed_portion) => parsed_portion,
+                Err(_) => {
+                    return Err(SRTError::TimestampParseError);
+                }
+            };
+            match index {
+                0 => timestamp_secs_temp += parsed_portion,
+                1 => timestamp_secs_temp += parsed_portion * 60,
+                2 => timestamp_secs_temp += parsed_portion * 3600,
+                _ => unreachable!(),
+            }
+        }
+        timestamp_secs_temp
+    };
+    return Ok(Duration::new(timestamp_secs, timestamp_nanos));
+}
+
+pub fn parse_srt_timing(srt_timing: &str, index: &usize) -> Result<SRTTiming, SRTError> {
+    let parsed_timing = {
+        let (matched_start, matched_end) = match srt_timing.split_once("-->") {
+            Some((start, end)) => (start.trim().replace(',', "."), end.trim().replace(',', ".")),
+            None => {
+                return Err(SRTError::TimingsParseError {
+                    // TODO: Is clone() ok here?
+                    index: index.clone(),
+                });
+            }
+        };
+        SRTTiming {
+            start: match parse_timestamp(&matched_start) {
+                Ok(parsed_timestamp) => parsed_timestamp,
+                Err(_) => {
+                    return Err(SRTError::TimingsParseError {
+                        index: index.clone(),
+                    });
+                }
+            },
+            end: match parse_timestamp(&matched_end) {
+                Ok(parsed_timestamp) => parsed_timestamp,
+                Err(_) => {
+                    return Err(SRTError::TimingsParseError {
+                        index: index.clone(),
+                    });
+                }
+            },
         }
     };
-    return Ok((start, end));
+    return Ok(parsed_timing);
 }
 
 // Reads from a buffer, returns a SRTFragment and the buffer, for the next iteration
 // or smth else
-pub fn get_srt_fragments(srt_file: &File) -> Vec<SRTFragment> {
-    let mut vector_fragments = Vec::new();
+pub fn get_srt_fragments(srt_file: &File) -> Result<Vec<SRTFragment>, SRTError> {
+    let mut vector_fragments: Vec<SRTFragment> = Vec::new();
     let mut buffered_srt_file = BufReader::new(srt_file);
-    let mut current_line = String::new();
+    let mut current_buffered_line = String::new();
+    let mut current_subtitle_lines: Vec<String> = vec![];
     let mut current_index = 0;
-    let mut current_timing = String::new();
+    let mut current_timing = SRTTiming::default();
 
     loop {
-        // clear line
-        current_line.clear();
+        // clear buffer
+        current_buffered_line.clear();
+
         // get a new line
-        match buffered_srt_file.read_line(&mut current_line) {
-            Err(why) => println!("Couldn't read: {}", why),
+        match buffered_srt_file.read_line(&mut current_buffered_line) {
+            //TODO: fix
+            Err(_) => return Err(SRTError::MalformedBlockError),
             Ok(1_usize..) => {}
             // Finished reading the fragment
             Ok(0_usize) => {
-                return vector_fragments;
+                return Ok(vector_fragments);
             }
         }
-        // After reading the current index
-        if current_index != 0 {
-            // Read the timing first
-            if current_timing.is_empty() {
-                current_timing = current_line.clone().trim().to_owned();
-            } else {
-                // Finally, we also now have the current line, so
-                // assemble the whole fragment
-                let current_fragment = SRTFragment {
-                    index: current_index,
-                    timing: current_timing,
-                    line: current_line.clone().trim().to_owned(),
-                };
-                // println!("current_index: {}", current_fragment.index);
-                // println!("current_timing_pot: {}", current_fragment.timing);
-                // println!("current_line: {}", current_fragment.line);
 
-                vector_fragments.push(current_fragment);
-                // Clean up for next iteration
-                current_index = 0;
-                current_timing = "".to_owned();
-                current_line = "".to_owned();
+        // If the index isn't set, and the current timing is empty
+        // we can fill the timing
+        if current_index != 0 {
+            if current_timing.empty() {
+                // Set the current timing
+                current_timing =
+                    match parse_srt_timing(current_buffered_line.trim(), &current_index) {
+                        Ok(parsed_timing) => parsed_timing,
+                        Err(_) => {
+                            return Err(SRTError::TimingsParseError {
+                                index: current_index,
+                            });
+                        }
+                    };
+            } else {
+                // If we find a pure newline, that means we finished reading a block
+                if current_buffered_line != "\n" {
+                    // Put the rest of the text into the vector of subtitle lines
+                    current_subtitle_lines.push(current_buffered_line.trim().to_owned());
+                } else {
+                    // this copies the value and returns the default of Vec
+                    let subtitle_lines = std::mem::take(&mut current_subtitle_lines);
+                    vector_fragments.push(SRTFragment {
+                        index: current_index,
+                        timing: current_timing,
+                        subtitle_lines,
+                    });
+
+                    // reset rest of the values
+                    current_timing = SRTTiming::default();
+                    current_index = 0;
+                };
             }
+        } else {
+            // Get an index
+            // This also used as a sync point
+            current_index = match current_buffered_line.trim().parse::<usize>() {
+                // Is this the correct way to "do nothing"?
+                Err(_) => return Err(SRTError::IndexParseError),
+                Ok(number) => number,
+            };
         }
-        current_index = match current_line.trim().parse::<usize>() {
-            // Is this the correct way to "do nothing"?
-            Err(_) => current_index,
-            Ok(number) => number,
-        };
     }
 }
