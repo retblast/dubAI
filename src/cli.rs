@@ -101,23 +101,26 @@ struct Cli {
     mode: Mode,
 }
 
+#[derive(Debug)]
+enum ParseURLError {
+    CantReadPort,
+    Unparseable,
+}
+
 // extract the host and address
-fn parse_url_address(address: &str) -> (String, u32) {
+fn parse_url_address(address: &str) -> Result<(String, u32), ParseURLError> {
     let (host, port): (String, u32) = match address.rsplit_once(':') {
         Some((host_string, address_string)) => (
             host_string.to_string(),
             match address_string.parse::<u32>() {
                 Ok(port) => port,
-                Err(why) => {
-                    panic!("Failed to get port from the URI: {why}")
-                }
+                // I throw the 'why' here
+                Err(_) => return Err(ParseURLError::CantReadPort),
             },
         ),
-        None => {
-            panic!("Failed to parse URI.")
-        }
+        None => return Err(ParseURLError::Unparseable),
     };
-    return (host, port);
+    return Ok((host, port));
 }
 
 fn setup_translator_cli(options: TranslatorCLI) -> TranslatorConfig {
@@ -254,8 +257,16 @@ pub async fn setup_from_cli() {
             let srt_file = open_input_file(&srt_path);
             let output_srt_path = PathBuf::from(&dubai_config.translator_config.output_srt_path);
             let output_srt_file = open_output_file(&output_srt_path);
-            let srt_fragments = get_srt_fragments(&srt_file);
-            let (host, port) = parse_url_address(&dubai_config.translator_config.llm_address);
+            let srt_fragments = match get_srt_fragments(&srt_file) {
+                Ok(fragments) => fragments,
+                Err(why) => {
+                    //TODO: Implement display for the error types someday
+                    println!("{:?}", why);
+                    std::process::exit(1);
+                }
+            };
+            let (host, port) = parse_url_address(&dubai_config.translator_config.llm_address)
+                .expect("Failed to parse the URL");
             let kobold_chat_config = KoboldChatConfig::new(&dubai_config.translator_config.model);
             let kobold_config = KoboldConfig::new(&host, &port, None, Some(kobold_chat_config));
             koboldcpp_start(&kobold_config).await;
@@ -270,13 +281,21 @@ pub async fn setup_from_cli() {
             dubai_config.dubber_config = setup_dubber_cli(options);
             let srt_path = PathBuf::from(&dubai_config.dubber_config.input_srt);
             let srt_file = open_input_file(&srt_path);
-            let srt_fragments = get_srt_fragments(&srt_file);
+            let srt_fragments = match get_srt_fragments(&srt_file) {
+                Ok(fragments) => fragments,
+                Err(why) => {
+                    //TODO: Implement display for the error types someday
+                    println!("{:?}", why);
+                    std::process::exit(1);
+                }
+            };
             let voice_refs = create_voice_references(
                 &srt_fragments,
                 &dubai_config.dubber_config.input_audio,
                 &dubai_config.dubber_config.voice_refs_dir,
             );
-            let (host, port) = parse_url_address(&dubai_config.dubber_config.llm_address);
+            let (host, port) = parse_url_address(&dubai_config.dubber_config.llm_address)
+                .expect("Failed to parse the URL");
             let kobold_tts_config = KoboldTTSConfig::new(
                 &dubai_config.dubber_config.model,
                 &dubai_config.dubber_config.wavtokenizer,

@@ -1,12 +1,24 @@
+use std::fmt;
 use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::time::Duration;
 
 #[derive(Default, Clone, Debug, PartialEq, Copy)]
-struct SRTTiming {
-    start: Duration,
-    end: Duration,
+pub struct SRTTiming {
+    pub start: Duration,
+    pub end: Duration,
+}
+
+impl fmt::Display for SRTTiming {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} --> {}",
+            form_timestamp_from_timing(&self.start),
+            form_timestamp_from_timing(&self.end)
+        )
+    }
 }
 
 impl SRTTiming {
@@ -29,7 +41,7 @@ impl SRTTiming {
 pub struct SRTFragment {
     pub index: usize,
     pub timing: SRTTiming,
-    pub subtitle_lines: Vec<String>,
+    pub subtitle_lines: String,
 }
 
 #[derive(Debug)]
@@ -39,6 +51,16 @@ pub enum SRTError {
     TimestampParseError,
     IndexParseError,
     MalformedBlockError,
+}
+
+pub fn form_timestamp_from_timing(timing: &Duration) -> String {
+    let hours = (timing.as_secs() / 3600).to_string();
+    let minutes = ((timing.as_secs() % 3600) / 60).to_string();
+    let seconds = (timing.as_secs() % 3600).to_string();
+    let miliseconds = timing.subsec_millis().to_string();
+
+    let timestamp = format!("{hours:02}:{minutes:02}:{seconds:02},{miliseconds:03}");
+    return timestamp;
 }
 
 fn parse_timestamp(timestamp: &str) -> Result<Duration, SRTError> {
@@ -117,7 +139,7 @@ pub fn get_srt_fragments(srt_file: &File) -> Result<Vec<SRTFragment>, SRTError> 
     let mut vector_fragments: Vec<SRTFragment> = Vec::new();
     let mut buffered_srt_file = BufReader::new(srt_file);
     let mut current_buffered_line = String::new();
-    let mut current_subtitle_lines: Vec<String> = vec![];
+    let mut current_subtitle_lines = String::new();
     let mut current_index = 0;
     let mut current_timing = SRTTiming::default();
 
@@ -154,16 +176,16 @@ pub fn get_srt_fragments(srt_file: &File) -> Result<Vec<SRTFragment>, SRTError> 
                 // If we find a pure newline, that means we finished reading a block
                 if current_buffered_line != "\n" {
                     // Put the rest of the text into the vector of subtitle lines
-                    current_subtitle_lines.push(current_buffered_line.trim().to_owned());
+                    // TODO: Instead of flattening/replacing newlines for spaces, find a better
+                    // way to store this, maybe
+                    current_subtitle_lines.push_str(&current_buffered_line);
+                    current_subtitle_lines.push(' ');
                 } else {
-                    // this copies the value and returns the default of Vec
-                    let subtitle_lines = std::mem::take(&mut current_subtitle_lines);
                     vector_fragments.push(SRTFragment {
                         index: current_index,
                         timing: current_timing,
-                        subtitle_lines,
+                        subtitle_lines: current_subtitle_lines.trim().to_owned(),
                     });
-
                     // reset rest of the values
                     current_timing = SRTTiming::default();
                     current_index = 0;

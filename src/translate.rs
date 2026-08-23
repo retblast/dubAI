@@ -15,10 +15,10 @@ pub async fn translate_loaded_srt_fragments(
 ) -> () {
     for current_srt_fragment in srt_fragments {
         let mut translated_fragment = current_srt_fragment.clone();
-        println!("Translating: {}", &current_srt_fragment.line);
+        println!("Translating: {}", &current_srt_fragment.subtitle_lines);
         // TODO: implement translate_line
-        translated_fragment.line =
-            match translate_line(&current_srt_fragment.line, &translator_config).await {
+        translated_fragment.subtitle_lines =
+            match translate_line(&current_srt_fragment.subtitle_lines, &translator_config).await {
                 Ok(string) => string,
                 Err(why) => {
                     panic!("Failed to translate the current line, {}", why);

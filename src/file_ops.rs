@@ -36,7 +36,7 @@ pub fn write_srt_file(output_fragment: &SRTFragment, output_file: &File) -> () {
     match write!(
         buffered_writer,
         "{}\n{}\n{}\n\n",
-        output_fragment.index, output_fragment.timing, output_fragment.line,
+        output_fragment.index, output_fragment.timing, output_fragment.subtitle_lines,
     ) {
         Err(why) => println!("Failed to write: {}", why),
         Ok(_) => (),

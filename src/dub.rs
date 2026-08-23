@@ -1,6 +1,5 @@
 use crate::config::DubberConfig;
-use crate::srt_ops::SRTFragment;
-use crate::srt_ops::get_srt_timings;
+use crate::srt_ops::{SRTFragment, form_timestamp_from_timing};
 use ffmpeg_sidecar::command::FfmpegCommand;
 use llm_connect::connection::openai_tts_send_prompt;
 use std::collections::HashMap;
@@ -27,13 +26,8 @@ pub fn create_voice_references(
     let mut voice_references = HashMap::new();
     for current_srt_fragment in srt_fragments {
         let voice_ref_idx = current_srt_fragment.index;
-        let (start, end) = match get_srt_timings(current_srt_fragment) {
-            Ok((start, end)) => (start, end),
-            Err(why) => {
-                println!("Parsing a SRT timing failed: {why:?}");
-                continue;
-            }
-        };
+        let start = form_timestamp_from_timing(&current_srt_fragment.timing.start);
+        let end = form_timestamp_from_timing(&current_srt_fragment.timing.end);
         let mut output_filename = format!("{}_ref.wav", voice_ref_idx);
 
         // Insert before adding the path for ffmpeg
@@ -76,7 +70,7 @@ pub fn create_voice_references(
 
 // Dubs a line
 // Creates a index_dubbed.mp3 file
-pub async fn dub_line(dubber_config: &DubberConfig, line_to_dub: &str, voice_ref: &str) {
+pub async fn dub_line(dubber_config: &DubberConfig, subtitle_lines: &str, voice_ref: &str) {
     // The output filename is: output_folder + the index of the voice ref + _dubbed.mp3
     // the trimming is kinda finnicky
     let voice_ref_idx = voice_ref.trim_end_matches("_ref.wav").to_string();
@@ -113,7 +107,7 @@ pub async fn dub_line(dubber_config: &DubberConfig, line_to_dub: &str, voice_ref
         &dubber_config.llm_address,
         &output_filename,
         &"kcpp".to_string(),
-        &line_to_dub,
+        &subtitle_lines,
         &voice_ref,
         5,
     )
@@ -162,6 +156,11 @@ pub async fn dub_srt_file(
             }
         };
         println!("Voice ref file: {}", &voice_ref);
-        dub_line(dubber_config, &current_srt_fragment.line, &voice_ref).await;
+        dub_line(
+            dubber_config,
+            &current_srt_fragment.subtitle_lines,
+            &voice_ref,
+        )
+        .await;
     }
 }
