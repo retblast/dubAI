@@ -2,6 +2,9 @@ use std::fmt;
 use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
+use std::io::BufWriter;
+use std::io::Write;
+use std::path::PathBuf;
 use std::time::Duration;
 
 #[derive(Default, Clone, Debug, PartialEq, Copy)]
@@ -51,6 +54,53 @@ pub enum SRTError {
     TimestampParseError,
     IndexParseError,
     MalformedBlockError,
+    IoError(std::io::Error),
+}
+
+impl From<std::io::Error> for SRTError {
+    fn from(error: std::io::Error) -> Self {
+        SRTError::IoError(error)
+    }
+}
+// If I want to load an SRT file for translation, I will have to provide a filepath
+// If I want to create and SRT file to store the translated subtitles, I will have to provide a filepath
+//
+pub struct SRTFile {
+    filepath: PathBuf,
+    fragments: Vec<SRTFragment>,
+}
+
+impl SRTFile {
+    // to read for translation
+    pub fn open(filepath: PathBuf) -> Result<Self, SRTError> {
+        let input_file = File::open(filepath.as_path())?;
+        let fragments = get_srt_fragments(&input_file)?;
+        Ok(Self {
+            filepath,
+            fragments,
+        })
+    }
+
+    // // to store the translation
+    pub fn new(filepath: PathBuf, fragments: Vec<SRTFragment>) -> Self {
+        Self {
+            filepath,
+            fragments,
+        }
+    }
+
+    pub fn write(&self) -> Result<(), SRTError> {
+        let output_file = File::create(&self.filepath)?;
+        let mut buffered_writer = BufWriter::new(output_file);
+        for fragment in &self.fragments {
+            write!(
+                buffered_writer,
+                "{}\n{}\n{}\n\n",
+                fragment.index, fragment.timing, fragment.subtitle_lines,
+            )?
+        }
+        Ok(())
+    }
 }
 
 pub fn form_timestamp_from_timing(timing: &Duration) -> String {
