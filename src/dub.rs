@@ -1,8 +1,11 @@
 use crate::config::DubberConfig;
 use crate::srt_ops::{SRTFragment, form_timestamp_from_timing};
 use ffmpeg_sidecar::command::FfmpegCommand;
+use llm_connect::connection::LlmConnectionError;
 use llm_connect::connection::openai_tts_send_prompt;
 use std::collections::HashMap;
+use std::fmt::Display;
+use std::fmt::Formatter;
 use std::fs::File;
 use std::path::Path;
 
@@ -14,6 +17,33 @@ fn create_base_ffmpeg_command(audio_file: &str) -> FfmpegCommand {
     ffmpeg_command.codec_audio("mp3");
     ffmpeg_command.args(["-b:a", "320k"]);
     ffmpeg_command
+}
+
+#[derive(Debug)]
+pub enum DubError {
+    LlmError(LlmConnectionError),
+    IoError(std::io::Error),
+}
+
+impl From<std::io::Error> for DubError {
+    fn from(error: std::io::Error) -> Self {
+        DubError::IoError(error)
+    }
+}
+
+impl From<LlmConnectionError> for DubError {
+    fn from(error: LlmConnectionError) -> Self {
+        Self::LlmError(error)
+    }
+}
+
+impl Display for DubError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LlmError(error) => write!(f, "Error with the LLM: {error}"),
+            Self::IoError(error) => write!(f, "Dubbing IO Error: {error}"),
+        }
+    }
 }
 
 // Creates mp3 files that are dialogue, taken from the SRT file
@@ -70,7 +100,11 @@ pub fn create_voice_references(
 
 // Dubs a line
 // Creates a index_dubbed.mp3 file
-pub async fn dub_line(dubber_config: &DubberConfig, subtitle_lines: &str, voice_ref: &str) {
+pub async fn dub_line(
+    dubber_config: &DubberConfig,
+    subtitle_lines: &str,
+    voice_ref: &str,
+) -> Result<(), DubError> {
     // The output filename is: output_folder + the index of the voice ref + _dubbed.mp3
     // the trimming is kinda finnicky
     let voice_ref_idx = voice_ref.trim_end_matches("_ref.wav").to_string();
@@ -87,23 +121,19 @@ pub async fn dub_line(dubber_config: &DubberConfig, subtitle_lines: &str, voice_
     let dubbed_file_path = Path::new(&dubber_config.output_folder).join(&output_filename);
 
     // Check if output file already exists
-    match File::open(&dubbed_file_path) {
-        Ok(_) => {
-            println!(
-                "Dubbed file already created: {}, skipping...",
-                dubbed_file_path
-                    .to_str()
-                    .expect("Somehow failed to display the dubbed_file_path variable")
-            );
-            return;
-        }
-        Err(_) => {}
-    };
+    if dubbed_file_path.exists() {
+        println!(
+            "Dubbed file already created: {}, skipping...",
+            dubbed_file_path.display()
+        );
+        return Ok(());
+    }
+
     // "http://".to_owned() +
     // let finaladdress = &dubber_config.llm_address;
 
     // println!("finaladdress: {}", finaladdress);
-    match openai_tts_send_prompt(
+    openai_tts_send_prompt(
         &dubber_config.llm_address,
         &output_filename,
         &"kcpp".to_string(),
@@ -111,26 +141,13 @@ pub async fn dub_line(dubber_config: &DubberConfig, subtitle_lines: &str, voice_
         &voice_ref,
         5,
     )
-    .await
-    {
-        Ok(_) => {
-            match fs::rename(&output_filename, dubbed_file_path).await {
-                Ok(_) => {}
-                Err(why) => println!(
-                    "Couldn't put the generated audio file in its folder, because {}",
-                    why
-                ),
-            };
-            println!(
-                "Dubbed line {}, filename: {}",
-                voice_ref_idx, &output_filename
-            );
-        }
-        Err(why) => println!(
-            "Failed to generate: {}, because of: {}",
-            output_filename, why
-        ),
-    };
+    .await?;
+    fs::rename(&output_filename, dubbed_file_path).await?;
+    println!(
+        "Dubbed line {}, filename: {}",
+        voice_ref_idx, &output_filename
+    );
+    Ok(())
 }
 
 // Dub an SRT file
@@ -140,7 +157,7 @@ pub async fn dub_srt_file(
     srt_fragments: &Vec<SRTFragment>,
     dubber_config: &DubberConfig,
     voice_references: HashMap<usize, String>,
-) {
+) -> Result<(), DubError> {
     for current_srt_fragment in srt_fragments {
         let voice_ref_idx: usize = current_srt_fragment.index;
         println!("Voice ref idx: {}", &voice_ref_idx);
@@ -161,6 +178,7 @@ pub async fn dub_srt_file(
             &current_srt_fragment.subtitle_lines,
             &voice_ref,
         )
-        .await;
+        .await?;
     }
+    Ok(())
 }

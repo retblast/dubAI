@@ -1,23 +1,12 @@
-use crate::config::DubAIConfig;
 use crate::config::DubberConfig;
 use crate::config::TranslatorConfig;
-use crate::dub::create_voice_references;
-use crate::dub::dub_srt_file;
-use crate::file_ops::open_input_file;
-use crate::file_ops::open_output_file;
-use crate::srt_ops::get_srt_fragments;
-use crate::translate::translate_loaded_srt_fragments;
 use clap::Parser;
 use clap::Subcommand;
-use llm_connect::config::KoboldChatConfig;
-use llm_connect::config::KoboldConfig;
-use llm_connect::config::KoboldTTSConfig;
-use llm_connect::connection::koboldcpp_start;
 use std::path::Path;
 use std::path::PathBuf;
 
 #[derive(Parser)]
-struct TranslatorCLI {
+pub struct TranslatorCLI {
     /// Language to translate from (fed to the AI)
     #[arg(default_value = "English", short = 'l', long, required = true)]
     input_language: String,
@@ -57,7 +46,7 @@ struct TranslatorCLI {
 }
 
 #[derive(Parser)]
-struct DubberCLI {
+pub struct DubberCLI {
     /// URL address of the LLM
     #[arg(long)]
     address: Option<String>,
@@ -86,7 +75,7 @@ struct DubberCLI {
 }
 
 #[derive(Subcommand)]
-enum Mode {
+pub enum Mode {
     /// Translation (SRT files) mode
     Translate(TranslatorCLI),
     /// Dubbing mode
@@ -96,19 +85,19 @@ enum Mode {
 #[derive(Parser)]
 #[command(name = "dubai")]
 #[command(version, about = "AI dubbing toolbox", long_about = "To dub things.")]
-struct Cli {
+pub struct Cli {
     #[command(subcommand)]
-    mode: Mode,
+    pub mode: Mode,
 }
 
 #[derive(Debug)]
-enum ParseURLError {
+pub enum ParseURLError {
     CantReadPort,
     Unparseable,
 }
 
 // extract the host and address
-fn parse_url_address(address: &str) -> Result<(String, u32), ParseURLError> {
+pub fn parse_url_address(address: &str) -> Result<(String, u32), ParseURLError> {
     let (host, port): (String, u32) = match address.rsplit_once(':') {
         Some((host_string, address_string)) => (
             host_string.to_string(),
@@ -123,7 +112,7 @@ fn parse_url_address(address: &str) -> Result<(String, u32), ParseURLError> {
     return Ok((host, port));
 }
 
-fn setup_translator_cli(options: TranslatorCLI) -> TranslatorConfig {
+pub fn setup_translator_cli(options: TranslatorCLI) -> TranslatorConfig {
     let input_language;
     let output_language;
     let llm_address;
@@ -192,7 +181,7 @@ fn setup_translator_cli(options: TranslatorCLI) -> TranslatorConfig {
     translator_config
 }
 
-fn setup_dubber_cli(options: DubberCLI) -> DubberConfig {
+pub fn setup_dubber_cli(options: DubberCLI) -> DubberConfig {
     let llm_address = match options.address {
         Some(address) => address,
         None => {
@@ -241,76 +230,6 @@ fn setup_dubber_cli(options: DubberCLI) -> DubberConfig {
 }
 
 // General setup
-pub async fn setup_from_cli() {
-    let cli = Cli::parse();
+// pub async fn setup_from_cli() -> Result<(), dubaiError> {
 
-    //TODO: Maybe there's a better way to handle this?
-    let mut dubai_config = DubAIConfig {
-        ..Default::default()
-    };
-
-    match cli.mode {
-        // Translator setup
-        Mode::Translate(options) => {
-            dubai_config.translator_config = setup_translator_cli(options);
-            let srt_path = PathBuf::from(&dubai_config.translator_config.input_srt_path);
-            let srt_file = open_input_file(&srt_path);
-            let output_srt_path = PathBuf::from(&dubai_config.translator_config.output_srt_path);
-            let output_srt_file = open_output_file(&output_srt_path);
-            let srt_fragments = match get_srt_fragments(&srt_file) {
-                Ok(fragments) => fragments,
-                Err(why) => {
-                    //TODO: Implement display for the error types someday
-                    println!("{:?}", why);
-                    std::process::exit(1);
-                }
-            };
-            let (host, port) = parse_url_address(&dubai_config.translator_config.llm_address)
-                .expect("Failed to parse the URL");
-            let kobold_chat_config = KoboldChatConfig::new(&dubai_config.translator_config.model);
-            let kobold_config = KoboldConfig::new(&host, &port, None, Some(kobold_chat_config));
-            koboldcpp_start(&kobold_config).await;
-            translate_loaded_srt_fragments(
-                &srt_fragments,
-                &dubai_config.translator_config,
-                &output_srt_file,
-            )
-            .await;
-        }
-        Mode::Dub(options) => {
-            dubai_config.dubber_config = setup_dubber_cli(options);
-            let srt_path = PathBuf::from(&dubai_config.dubber_config.input_srt);
-            let srt_file = open_input_file(&srt_path);
-            let srt_fragments = match get_srt_fragments(&srt_file) {
-                Ok(fragments) => fragments,
-                Err(why) => {
-                    //TODO: Implement display for the error types someday
-                    println!("{:?}", why);
-                    std::process::exit(1);
-                }
-            };
-            let voice_refs = create_voice_references(
-                &srt_fragments,
-                &dubai_config.dubber_config.input_audio,
-                &dubai_config.dubber_config.voice_refs_dir,
-            );
-            let (host, port) = parse_url_address(&dubai_config.dubber_config.llm_address)
-                .expect("Failed to parse the URL");
-            let kobold_tts_config = KoboldTTSConfig::new(
-                &dubai_config.dubber_config.model,
-                &dubai_config.dubber_config.wavtokenizer,
-                &dubai_config.dubber_config.voice_refs_dir,
-            );
-            // TEST ONLY
-            // println!("llm_address: {}", &dubai_config.dubber_config.llm_address);
-            // println!(
-            //     "llm_address: {:?}",
-            //     parse_url_address(&dubai_config.dubber_config.llm_address)
-            // );
-            let kobold_config = KoboldConfig::new(&host, &port, Some(kobold_tts_config), None);
-            println!("Voice references: {:#?}", voice_refs);
-            koboldcpp_start(&kobold_config).await;
-            dub_srt_file(&srt_fragments, &dubai_config.dubber_config, voice_refs).await;
-        }
-    }
-}
+// }

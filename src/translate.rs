@@ -1,31 +1,48 @@
 use crate::config::TranslatorConfig;
-use crate::file_ops::write_srt_file;
 use crate::srt_ops::SRTFragment;
+use llm_connect::connection::LlmConnectionError;
 use llm_connect::connection::openai_chat_send_prompt;
+use std::fmt::Display;
+use std::fmt::Formatter;
 use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
 
+#[derive(Debug)]
+pub enum TranslateError {
+    LlmError(LlmConnectionError),
+}
+
+impl From<LlmConnectionError> for TranslateError {
+    fn from(error: LlmConnectionError) -> Self {
+        Self::LlmError(error)
+    }
+}
+
+impl Display for TranslateError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LlmError(error) => write!(f, "Error with the LLM: {error}"),
+        }
+    }
+}
+
 // Translates the loaded SRT fragments
-// and saves them in the output file
 pub async fn translate_loaded_srt_fragments(
     srt_fragments: &Vec<SRTFragment>,
     translator_config: &TranslatorConfig,
-    output_file: &File,
-) -> () {
+) -> Result<Vec<SRTFragment>, TranslateError> {
+    let mut output_fragments: Vec<SRTFragment> = Vec::new();
     for current_srt_fragment in srt_fragments {
         let mut translated_fragment = current_srt_fragment.clone();
         println!("Translating: {}", &current_srt_fragment.subtitle_lines);
         // TODO: implement translate_line
         translated_fragment.subtitle_lines =
-            match translate_line(&current_srt_fragment.subtitle_lines, &translator_config).await {
-                Ok(string) => string,
-                Err(why) => {
-                    panic!("Failed to translate the current line, {}", why);
-                }
-            };
-        write_srt_file(&translated_fragment, output_file);
+            translate_line(&current_srt_fragment.subtitle_lines, &translator_config).await?;
+        output_fragments.push(translated_fragment);
+        // write_srt_file(&translated_fragment, output_file);
     }
+    Ok(output_fragments)
 }
 
 // checks the progress of the translated srt
@@ -62,7 +79,7 @@ pub fn get_translated_srt_progress(read_buffer: &mut BufReader<&File>) -> u16 {
 pub async fn translate_line(
     line: &String,
     translator_config: &TranslatorConfig,
-) -> Result<String, Box<dyn std::error::Error>> {
+) -> Result<String, TranslateError> {
     // Because we can't access fields in format!
     let input_language = &translator_config.input_language;
     let output_language = &translator_config.output_language;

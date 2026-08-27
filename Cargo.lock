@@ -841,7 +841,7 @@ checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 [[package]]
 name = "llm-connect"
 version = "0.1.2"
-source = "git+https://github.com/retblast/llm-connect#f2fc7ae4a09e129a490ec3285a44081b6ca2bcfb"
+source = "git+https://github.com/retblast/llm-connect#c340a530295021d59b960678ddc44e8c5eecc2ac"
 dependencies = [
  "anyhow",
  "clap",

@@ -1,4 +1,6 @@
 use std::fmt;
+use std::fmt::Display;
+use std::fmt::Formatter;
 use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
@@ -62,6 +64,19 @@ impl From<std::io::Error> for SRTError {
         SRTError::IoError(error)
     }
 }
+
+impl Display for SRTError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TimingsParseError { index } => write!(f, "Failed to parse index at: {index} "),
+            Self::IndexParseError => write!(f, "Failed to parse the index"),
+            Self::TimestampParseError => write!(f, "Failed to parse timestamp"),
+            Self::MalformedBlockError => write!(f, "Malformed block"),
+            Self::IoError(error) => write!(f, "SRT IO Error: {error}"),
+        }
+    }
+}
+
 // If I want to load an SRT file for translation, I will have to provide a filepath
 // If I want to create and SRT file to store the translated subtitles, I will have to provide a filepath
 //
