@@ -7,10 +7,8 @@ use crate::config::DubAIConfig;
 use crate::dub::DubError;
 use crate::dub::create_voice_references;
 use crate::dub::dub_srt_file;
-use crate::file_ops::open_input_file;
 use crate::srt_ops::SRTError;
 use crate::srt_ops::SRTFile;
-use crate::srt_ops::get_srt_fragments;
 use crate::translate::TranslateError;
 use crate::translate::translate_loaded_srt_fragments;
 use clap::Parser;
@@ -24,7 +22,6 @@ use std::path::PathBuf;
 mod cli;
 mod config;
 mod dub;
-mod file_ops;
 // Temporarily out of the equation until I re-inspect it
 //mod mix;
 mod srt_ops;
@@ -80,41 +77,29 @@ async fn main() -> Result<(), DubaiError> {
         Mode::Translate(options) => {
             dubai_config.translator_config = setup_translator_cli(options);
             let srt_path = PathBuf::from(&dubai_config.translator_config.input_srt_path);
-            let srt_file = open_input_file(&srt_path);
+            // let srt_file = open_input_file(&srt_path);
+            let srt_file = SRTFile::open(srt_path)?;
             let output_srt_path = PathBuf::from(&dubai_config.translator_config.output_srt_path);
-            let srt_fragments = match get_srt_fragments(&srt_file) {
-                Ok(fragments) => fragments,
-                Err(why) => {
-                    //TODO: Implement display for the error types someday
-                    println!("{:?}", why);
-                    std::process::exit(1);
-                }
-            };
             let (host, port) = parse_url_address(&dubai_config.translator_config.llm_address)
                 .expect("Failed to parse the URL");
             let kobold_chat_config = KoboldChatConfig::new(&dubai_config.translator_config.model);
             let kobold_config = KoboldConfig::new(&host, &port, None, Some(kobold_chat_config));
             koboldcpp_start(&kobold_config).await;
-            let output_fragments =
-                translate_loaded_srt_fragments(&srt_fragments, &dubai_config.translator_config)
-                    .await?;
+            let output_fragments = translate_loaded_srt_fragments(
+                &srt_file.fragments,
+                &dubai_config.translator_config,
+            )
+            .await?;
             let output_srt = SRTFile::new(output_srt_path, output_fragments);
             output_srt.write()?;
         }
         Mode::Dub(options) => {
             dubai_config.dubber_config = setup_dubber_cli(options);
             let srt_path = PathBuf::from(&dubai_config.dubber_config.input_srt);
-            let srt_file = open_input_file(&srt_path);
-            let srt_fragments = match get_srt_fragments(&srt_file) {
-                Ok(fragments) => fragments,
-                Err(why) => {
-                    //TODO: Implement display for the error types someday
-                    println!("{:?}", why);
-                    std::process::exit(1);
-                }
-            };
+            //let srt_file = open_input_file(&srt_path);
+            let srt_file = SRTFile::open(srt_path)?;
             let voice_refs = create_voice_references(
-                &srt_fragments,
+                &srt_file.fragments,
                 &dubai_config.dubber_config.input_audio,
                 &dubai_config.dubber_config.voice_refs_dir,
             );
@@ -134,7 +119,7 @@ async fn main() -> Result<(), DubaiError> {
             let kobold_config = KoboldConfig::new(&host, &port, Some(kobold_tts_config), None);
             println!("Voice references: {:#?}", voice_refs);
             koboldcpp_start(&kobold_config).await;
-            dub_srt_file(&srt_fragments, &dubai_config.dubber_config, voice_refs).await?;
+            dub_srt_file(&srt_file.fragments, &dubai_config.dubber_config, voice_refs).await?;
         }
     }
     Ok(())
