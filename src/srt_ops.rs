@@ -6,6 +6,7 @@ use std::io::BufRead;
 use std::io::BufReader;
 use std::io::BufWriter;
 use std::io::Write;
+use std::num::ParseIntError;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -54,7 +55,7 @@ pub enum SRTError {
     // We error out at an index number
     TimingsParseError { index: usize },
     TimestampParseError,
-    IndexParseError,
+    IndexParseError(ParseIntError),
     MalformedBlockError,
     IoError(std::io::Error),
 }
@@ -65,11 +66,17 @@ impl From<std::io::Error> for SRTError {
     }
 }
 
+impl From<ParseIntError> for SRTError {
+    fn from(error: ParseIntError) -> Self {
+        SRTError::IndexParseError(error)
+    }
+}
+
 impl Display for SRTError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::TimingsParseError { index } => write!(f, "Failed to parse index at: {index} "),
-            Self::IndexParseError => write!(f, "Failed to parse the index"),
+            Self::IndexParseError(error) => write!(f, "Failed to parse the index, value: {error}"),
             Self::TimestampParseError => write!(f, "Failed to parse timestamp"),
             Self::MalformedBlockError => write!(f, "Malformed block"),
             Self::IoError(error) => write!(f, "SRT IO Error: {error}"),
@@ -126,13 +133,14 @@ impl SRTFile {
 
     // Reads from a buffer, returns a SRTFragment and the buffer, for the next iteration
     // or smth else
+    // Don't know how robust it is, or if it can handle malformed files
     pub fn get_srt_fragments(srt_file: &File) -> Result<Vec<SRTFragment>, SRTError> {
         let mut vector_fragments: Vec<SRTFragment> = Vec::new();
         let mut buffered_srt_file = BufReader::new(srt_file);
         let mut current_buffered_line = String::new();
-        let mut current_subtitle_lines = String::new();
-        let mut current_index = 0;
-        let mut current_timing = SRTTiming::default();
+        let mut current_subtitle_lines: Option<String> = None;
+        let mut current_index: Option<usize> = None;
+        let mut current_timing: Option<SRTTiming> = None;
 
         loop {
             // clear buffer
@@ -149,48 +157,51 @@ impl SRTFile {
                 }
             }
 
-            // If the index isn't set, and the current timing is empty
-            // we can fill the timing
-            if current_index != 0 {
-                if current_timing.empty() {
-                    // Set the current timing
-                    current_timing =
-                        match parse_srt_timing(current_buffered_line.trim(), &current_index) {
-                            Ok(parsed_timing) => parsed_timing,
-                            Err(_) => {
-                                return Err(SRTError::TimingsParseError {
-                                    index: current_index,
-                                });
-                            }
-                        };
-                } else {
-                    // If we find a pure newline, that means we finished reading a block
-                    if current_buffered_line != "\n" {
-                        // Put the rest of the text into the vector of subtitle lines
-                        // TODO: Instead of flattening/replacing newlines for spaces, find a better
-                        // way to store this, maybe
-                        current_subtitle_lines.push_str(&current_buffered_line);
-                        current_subtitle_lines.push(' ');
-                    } else {
-                        vector_fragments.push(SRTFragment {
-                            index: current_index,
-                            timing: current_timing,
-                            subtitle_lines: current_subtitle_lines.trim().to_owned(),
-                        });
-                        // reset rest of the values
-                        current_timing = SRTTiming::default();
-                        current_index = 0;
-                    };
-                }
-            } else {
+            if current_index.is_none() {
                 // Get an index
                 // This also used as a sync point
-                current_index = match current_buffered_line.trim().parse::<usize>() {
-                    // Is this the correct way to "do nothing"?
-                    Err(_) => return Err(SRTError::IndexParseError),
-                    Ok(number) => number,
-                };
+                current_index = Some(current_buffered_line.trim().parse::<usize>()?);
+                continue;
             }
+
+            if current_timing.is_none() {
+                // Set the current timing
+                current_timing = Some(parse_srt_timing(
+                    current_buffered_line.trim(),
+                    &current_index.unwrap(),
+                )?);
+                continue;
+            }
+
+            if current_buffered_line != "\n" {
+                // Put the rest of the text into the vector of subtitle lines
+                // TODO: Instead of flattening/replacing newlines for spaces, find a better
+                // way to store this, maybe
+                match &mut current_subtitle_lines {
+                    Some(lines) => {
+                        lines.push_str(&current_buffered_line);
+                        lines.push(' ');
+                    }
+                    None => {
+                        let mut lines = String::new();
+                        lines.push_str(&current_buffered_line);
+                        lines.push(' ');
+                        current_subtitle_lines = Some(lines);
+                    }
+                }
+            } else {
+                vector_fragments.push(SRTFragment {
+                    // TODO: This shouldn't be able to Panic, but
+                    // just keep this in case
+                    index: current_index.unwrap(),
+                    timing: current_timing.unwrap(),
+                    subtitle_lines: current_subtitle_lines.unwrap().trim().to_owned(),
+                });
+                // reset rest of the values
+                current_index = None;
+                current_timing = None;
+                current_subtitle_lines = None;
+            };
         }
     }
 }

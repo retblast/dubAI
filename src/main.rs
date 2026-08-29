@@ -94,7 +94,7 @@ async fn main() -> Result<(), DubaiError> {
             output_srt.write()?;
         }
         Mode::Dub(options) => {
-            dubai_config.dubber_config = setup_dubber_cli(options);
+            dubai_config.dubber_config = setup_dubber_cli(options)?;
             let srt_path = PathBuf::from(&dubai_config.dubber_config.input_srt);
             //let srt_file = open_input_file(&srt_path);
             let srt_file = SRTFile::open(srt_path)?;
@@ -119,7 +119,12 @@ async fn main() -> Result<(), DubaiError> {
             let kobold_config = KoboldConfig::new(&host, &port, Some(kobold_tts_config), None);
             println!("Voice references: {:#?}", voice_refs);
             koboldcpp_start(&kobold_config).await;
-            dub_srt_file(&srt_file.fragments, &dubai_config.dubber_config, voice_refs).await?;
+            dub_srt_file(
+                &srt_file.fragments,
+                &dubai_config.dubber_config,
+                voice_refs?,
+            )
+            .await?;
         }
     }
     Ok(())

@@ -1,5 +1,6 @@
 use crate::config::DubberConfig;
 use crate::config::TranslatorConfig;
+use crate::dub::DubError;
 use clap::Parser;
 use clap::Subcommand;
 use std::path::Path;
@@ -13,7 +14,7 @@ pub struct TranslatorCLI {
 
     /// Model to use for translation
     #[arg(short, long, required = true)]
-    model: String,
+    model: PathBuf,
 
     /// Max tokens for the translator
     #[arg(short, long)]
@@ -38,11 +39,11 @@ pub struct TranslatorCLI {
 
     /// Input SRT file to translate
     #[arg(long, required = true)]
-    input_srt_file: String,
+    input_srt_file: PathBuf,
 
     /// Output SRT file to translate
     #[arg(long)]
-    output_srt_file: Option<String>,
+    output_srt_file: Option<PathBuf>,
 }
 
 #[derive(Parser)]
@@ -52,22 +53,22 @@ pub struct DubberCLI {
     address: Option<String>,
     /// Model to use for dubbing
     #[arg(short, long, required = true)]
-    model: String,
+    model: PathBuf,
     /// Wavtokenizer to use for dubbing
     #[arg(short, long, required = true)]
-    wavtokenizer: String,
+    wavtokenizer: PathBuf,
     /// Input audio file to use for dubbing
     #[arg(long, required = true)]
-    input_audio: String,
+    input_audio: PathBuf,
     /// Output audio folder to store the dubbed files on
     #[arg(long, required = true)]
-    output_folder: String,
+    output_folder: PathBuf,
     /// Input srt file to use for dubbing
     #[arg(long, required = true)]
-    input_srt: String,
+    input_srt: PathBuf,
     /// Directory where the voice references are
     #[arg(long, required = true)]
-    voice_refs_dir: String,
+    voice_refs_dir: PathBuf,
     /// Language to dub to (fed to the AI)
     // kind of a dead feature lol
     #[arg(default_value = "English", short = 'L', long)]
@@ -181,7 +182,7 @@ pub fn setup_translator_cli(options: TranslatorCLI) -> TranslatorConfig {
     translator_config
 }
 
-pub fn setup_dubber_cli(options: DubberCLI) -> DubberConfig {
+pub fn setup_dubber_cli(options: DubberCLI) -> Result<DubberConfig, DubError> {
     let llm_address = match options.address {
         Some(address) => address,
         None => {
@@ -193,23 +194,18 @@ pub fn setup_dubber_cli(options: DubberCLI) -> DubberConfig {
     let model = options.model;
     let wavtokenizer = options.wavtokenizer;
     let input_audio = options.input_audio;
-    let output_folder = {
-        let mut temp_dir = options.output_folder;
-        // Append "/" if necessary
-        if temp_dir.chars().last() != Some('/') {
-            temp_dir.push('/');
-        }
-        temp_dir
+
+    let output_folder = match options.output_folder.is_dir() {
+        true => options.output_folder,
+        false => return Err(DubError::FolderRequired),
     };
+
     let input_srt = options.input_srt;
-    let voice_refs_dir = {
-        let mut temp_dir = options.voice_refs_dir;
-        // Append "/" if necessary
-        if temp_dir.chars().last() != Some('/') {
-            temp_dir.push('/');
-        }
-        temp_dir
+    let voice_refs_dir = match options.voice_refs_dir.is_dir() {
+        true => options.voice_refs_dir,
+        false => return Err(DubError::FolderRequired),
     };
+
     let output_language = match options.output_language {
         Some(address) => address,
         None => panic!("No language to dub to specified."),
@@ -226,7 +222,7 @@ pub fn setup_dubber_cli(options: DubberCLI) -> DubberConfig {
         output_folder,
     );
 
-    dubber_config
+    Ok(dubber_config)
 }
 
 // General setup

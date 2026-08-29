@@ -11,28 +11,28 @@ pub struct DubAIConfig {
 #[derive(Default)]
 pub struct DubberConfig {
     pub llm_address: String,
-    pub model: String,
-    pub wavtokenizer: String,
-    pub input_audio: String,
-    pub input_srt: String,
-    pub voice_refs_dir: String,
+    pub model: PathBuf,
+    pub wavtokenizer: PathBuf,
+    pub input_audio: PathBuf,
+    pub input_srt: PathBuf,
+    pub voice_refs_dir: PathBuf,
     // Uneeded, but keep just in case
     // pub input_language: String,
     // Not yet supported by koboldCPP
     pub output_language: String,
-    pub output_folder: String,
+    pub output_folder: PathBuf,
 }
 
 impl DubberConfig {
     pub fn new(
         llm_address: String,
-        model: String,
-        wavtokenizer: String,
-        input_audio: String,
-        input_srt: String,
-        voice_refs_dir: String,
+        model: PathBuf,
+        wavtokenizer: PathBuf,
+        input_audio: PathBuf,
+        input_srt: PathBuf,
+        voice_refs_dir: PathBuf,
         output_language: String,
-        output_folder: String,
+        output_folder: PathBuf,
     ) -> Self {
         Self {
             llm_address,
@@ -50,7 +50,7 @@ impl DubberConfig {
 #[derive(Default)]
 pub struct TranslatorConfig {
     pub llm_address: String,
-    pub model: String,
+    pub model: PathBuf,
     pub temperature: f32,
     pub max_tokens: u16,
     pub input_language: String,
@@ -63,7 +63,7 @@ pub struct TranslatorConfig {
 impl TranslatorConfig {
     pub fn new(
         llm_address: String,
-        model: String,
+        model: PathBuf,
         temperature: f32,
         max_tokens: u16,
         input_language: String,

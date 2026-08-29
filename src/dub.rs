@@ -6,7 +6,6 @@ use llm_connect::connection::openai_tts_send_prompt;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::fmt::Formatter;
-use std::fs::File;
 use std::path::Path;
 
 use tokio::fs;
@@ -23,6 +22,8 @@ fn create_base_ffmpeg_command(audio_file: &str) -> FfmpegCommand {
 pub enum DubError {
     LlmError(LlmConnectionError),
     IoError(std::io::Error),
+    CouldntParsePath,
+    FolderRequired,
 }
 
 impl From<std::io::Error> for DubError {
@@ -42,19 +43,24 @@ impl Display for DubError {
         match self {
             Self::LlmError(error) => write!(f, "Error with the LLM: {error}"),
             Self::IoError(error) => write!(f, "Dubbing IO Error: {error}"),
+            Self::CouldntParsePath => write!(f, "Couldn't create a needed path."),
+            Self::FolderRequired => write!(f, "Folder required."),
         }
     }
 }
 
 // Creates mp3 files that are dialogue, taken from the SRT file
 pub fn create_voice_references(
-    srt_fragments: &Vec<SRTFragment>,
-    audio_file: &str,
-    output_folder: &str,
-) -> HashMap<usize, String> {
-    let mut ffmpeg_command = create_base_ffmpeg_command(&audio_file);
+    srt_fragments: &[SRTFragment],
+    audio_file: &Path,
+    output_folder: &Path,
+) -> Result<HashMap<usize, String>, DubError> {
     let mut voice_references = HashMap::new();
     for current_srt_fragment in srt_fragments {
+        let mut ffmpeg_command = match audio_file.to_str() {
+            Some(path) => create_base_ffmpeg_command(&path),
+            None => return Err(DubError::CouldntParsePath),
+        };
         let voice_ref_idx = current_srt_fragment.index;
         let start = form_timestamp_from_timing(&current_srt_fragment.timing.start);
         let end = form_timestamp_from_timing(&current_srt_fragment.timing.end);
@@ -62,7 +68,7 @@ pub fn create_voice_references(
 
         // Insert before adding the path for ffmpeg
         voice_references.insert(voice_ref_idx, output_filename.to_string());
-        output_filename.insert_str(0, output_folder);
+        output_filename.insert_str(0, output_folder.to_str().ok_or(DubError::CouldntParsePath)?);
 
         // Code to create the file
         ffmpeg_command.args(["-ss", format!("{}", start).as_str()]);
@@ -70,32 +76,16 @@ pub fn create_voice_references(
         ffmpeg_command.output(&output_filename.as_str());
 
         // Check if output file already exists
-        match File::open(&output_filename) {
-            Ok(_) => {
-                println!(
-                    "Dubbed file already created: {}, skipping...",
-                    &output_filename
-                );
-            }
-            Err(_) => {
-                match ffmpeg_command.spawn() {
-                    Ok(mut child) => match child.wait() {
-                        Ok(..) => println!("Created {}", &output_filename),
-                        Err(why) => println!(
-                            "Failed to create {}_ref.wav, because of: {}",
-                            voice_ref_idx, why
-                        ),
-                    },
-                    Err(why) => println!(
-                        "Failed to create {}_ref.wav, because of: {}",
-                        voice_ref_idx, why
-                    ),
-                };
-            }
-        };
-        ffmpeg_command = create_base_ffmpeg_command(&audio_file);
+        if Path::new(&output_filename).exists() {
+            println!(
+                "Dubbed file already created: {}, skipping...",
+                &output_filename
+            );
+        } else {
+            ffmpeg_command.spawn()?.wait()?;
+        }
     }
-    return voice_references;
+    return Ok(voice_references);
 }
 
 // Dubs a line
@@ -114,7 +104,13 @@ pub async fn dub_line(
     let output_filename = {
         let mut temp_clone = voice_ref_idx.clone();
         temp_clone.push_str("_dubbed.mp3");
-        temp_clone.insert_str(0, &dubber_config.output_folder);
+        temp_clone.insert_str(
+            0,
+            &dubber_config
+                .output_folder
+                .to_str()
+                .ok_or(DubError::CouldntParsePath)?,
+        );
         temp_clone
     };
 
@@ -142,7 +138,10 @@ pub async fn dub_line(
         5,
     )
     .await?;
+
+    // Move the file from where it was produced to its intended location
     fs::rename(&output_filename, dubbed_file_path).await?;
+
     println!(
         "Dubbed line {}, filename: {}",
         voice_ref_idx, &output_filename
