@@ -174,7 +174,7 @@ pub async fn dub_srt_file(
         println!("Voice ref file: {}", &voice_ref);
         dub_line(
             dubber_config,
-            &current_srt_fragment.subtitle_lines,
+            &current_srt_fragment.get_flattened_lines(),
             &voice_ref,
         )
         .await?;

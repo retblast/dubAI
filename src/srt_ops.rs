@@ -47,7 +47,14 @@ impl SRTTiming {
 pub struct SRTFragment {
     pub index: usize,
     pub timing: SRTTiming,
-    pub subtitle_lines: String,
+    pub subtitle_lines: Vec<String>,
+}
+
+impl SRTFragment {
+    // Returns the subtitle_lines as a single line
+    pub fn get_flattened_lines(&self) -> String {
+        self.subtitle_lines.join(" ")
+    }
 }
 
 #[derive(Debug)]
@@ -125,7 +132,9 @@ impl SRTFile {
             write!(
                 buffered_writer,
                 "{}\n{}\n{}\n\n",
-                fragment.index, fragment.timing, fragment.subtitle_lines,
+                fragment.index,
+                fragment.timing,
+                fragment.get_flattened_lines(),
             )?
         }
         Ok(())
@@ -138,7 +147,7 @@ impl SRTFile {
         let mut vector_fragments: Vec<SRTFragment> = Vec::new();
         let mut buffered_srt_file = BufReader::new(srt_file);
         let mut current_buffered_line = String::new();
-        let mut current_subtitle_lines: Option<String> = None;
+        let mut current_subtitle_lines: Option<Vec<String>> = None;
         let mut current_index: Option<usize> = None;
         let mut current_timing: Option<SRTTiming> = None;
 
@@ -148,8 +157,7 @@ impl SRTFile {
 
             // get a new line
             match buffered_srt_file.read_line(&mut current_buffered_line) {
-                //TODO: fix
-                Err(_) => return Err(SRTError::MalformedBlockError),
+                Err(error) => return Err(SRTError::IoError(error)),
                 Ok(1_usize..) => {}
                 // Finished reading the fragment
                 Ok(0_usize) => {
@@ -179,13 +187,11 @@ impl SRTFile {
                 // way to store this, maybe
                 match &mut current_subtitle_lines {
                     Some(lines) => {
-                        lines.push_str(&current_buffered_line);
-                        lines.push(' ');
+                        lines.push(current_buffered_line.clone());
                     }
                     None => {
-                        let mut lines = String::new();
-                        lines.push_str(&current_buffered_line);
-                        lines.push(' ');
+                        let mut lines = Vec::new();
+                        lines.push(current_buffered_line.clone());
                         current_subtitle_lines = Some(lines);
                     }
                 }
@@ -195,7 +201,7 @@ impl SRTFile {
                     // just keep this in case
                     index: current_index.unwrap(),
                     timing: current_timing.unwrap(),
-                    subtitle_lines: current_subtitle_lines.unwrap().trim().to_owned(),
+                    subtitle_lines: current_subtitle_lines.unwrap().to_owned(),
                 });
                 // reset rest of the values
                 current_index = None;
@@ -260,7 +266,7 @@ pub fn parse_srt_timing(srt_timing: &str, index: &usize) -> Result<SRTTiming, SR
             None => {
                 return Err(SRTError::TimingsParseError {
                     // TODO: Is clone() ok here?
-                    index: index.clone(),
+                    index: index.to_owned(),
                 });
             }
         };
@@ -269,7 +275,7 @@ pub fn parse_srt_timing(srt_timing: &str, index: &usize) -> Result<SRTTiming, SR
                 Ok(parsed_timestamp) => parsed_timestamp,
                 Err(_) => {
                     return Err(SRTError::TimingsParseError {
-                        index: index.clone(),
+                        index: index.to_owned(),
                     });
                 }
             },
@@ -277,7 +283,7 @@ pub fn parse_srt_timing(srt_timing: &str, index: &usize) -> Result<SRTTiming, SR
                 Ok(parsed_timestamp) => parsed_timestamp,
                 Err(_) => {
                     return Err(SRTError::TimingsParseError {
-                        index: index.clone(),
+                        index: index.to_owned(),
                     });
                 }
             },

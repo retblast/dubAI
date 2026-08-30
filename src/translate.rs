@@ -29,16 +29,24 @@ impl Display for TranslateError {
 
 // Translates the loaded SRT fragments
 pub async fn translate_loaded_srt_fragments(
-    srt_fragments: &Vec<SRTFragment>,
+    srt_fragments: &[SRTFragment],
     translator_config: &TranslatorConfig,
 ) -> Result<Vec<SRTFragment>, TranslateError> {
     let mut output_fragments: Vec<SRTFragment> = Vec::new();
     for current_srt_fragment in srt_fragments {
         let mut translated_fragment = current_srt_fragment.clone();
-        println!("Translating: {}", &current_srt_fragment.subtitle_lines);
-        // TODO: implement translate_line
-        translated_fragment.subtitle_lines =
-            translate_line(&current_srt_fragment.subtitle_lines, &translator_config).await?;
+        println!(
+            "Translating: {}",
+            &current_srt_fragment.get_flattened_lines()
+        );
+        // we can't avoid saving the translated line as a singular line
+        translated_fragment.subtitle_lines.push(
+            translate_line(
+                &current_srt_fragment.get_flattened_lines(),
+                &translator_config,
+            )
+            .await?,
+        );
         output_fragments.push(translated_fragment);
         // write_srt_file(&translated_fragment, output_file);
     }
