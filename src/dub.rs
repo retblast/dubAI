@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::fmt::Display;
 use std::fmt::Formatter;
 use std::path::Path;
+use std::path::PathBuf;
 
 use tokio::fs;
 
@@ -23,6 +24,7 @@ pub enum DubError {
     LlmError(LlmConnectionError),
     IoError(std::io::Error),
     CouldntParsePath,
+    //TODO: more context in general for errors
     FolderRequired,
 }
 
@@ -113,14 +115,12 @@ pub async fn dub_line(
         );
         temp_clone
     };
-
-    let dubbed_file_path = Path::new(&dubber_config.output_folder).join(&output_filename);
-
+    let output_filepath = PathBuf::from(&output_filename);
     // Check if output file already exists
-    if dubbed_file_path.exists() {
+    if output_filepath.exists() {
         println!(
             "Dubbed file already created: {}, skipping...",
-            dubbed_file_path.display()
+            output_filepath.display()
         );
         return Ok(());
     }
@@ -135,12 +135,12 @@ pub async fn dub_line(
         &"kcpp".to_string(),
         &subtitle_lines,
         &voice_ref,
-        5,
+        10,
     )
     .await?;
 
     // Move the file from where it was produced to its intended location
-    fs::rename(&output_filename, dubbed_file_path).await?;
+    fs::rename(&output_filename, output_filepath).await?;
 
     println!(
         "Dubbed line {}, filename: {}",
