@@ -1,8 +1,10 @@
 use crate::config::DubberConfig;
 use crate::config::TranslatorConfig;
-use crate::dub::DubError;
+use crate::dub;
 use clap::Parser;
 use clap::Subcommand;
+use std::fmt::Display;
+use std::fmt::Formatter;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -92,23 +94,40 @@ pub struct Cli {
 }
 
 #[derive(Debug)]
-pub enum ParseURLError {
+pub enum Error {
     CantReadPort,
     Unparseable,
 }
 
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::CantReadPort => write!(f, "Can't parse the port"),
+            Self::Unparseable => write!(f, "Something was unparseable."),
+        }
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            // TODO: For now
+            _ => None,
+        }
+    }
+}
 // extract the host and address
-pub fn parse_url_address(address: &str) -> Result<(String, u32), ParseURLError> {
+pub fn parse_url_address(address: &str) -> Result<(String, u32), Error> {
     let (host, port): (String, u32) = match address.rsplit_once(':') {
         Some((host_string, address_string)) => (
             host_string.to_string(),
             match address_string.parse::<u32>() {
                 Ok(port) => port,
                 // I throw the 'why' here
-                Err(_) => return Err(ParseURLError::CantReadPort),
+                Err(_) => return Err(Error::CantReadPort),
             },
         ),
-        None => return Err(ParseURLError::Unparseable),
+        None => return Err(Error::Unparseable),
     };
     return Ok((host, port));
 }
@@ -182,7 +201,7 @@ pub fn setup_translator_cli(options: TranslatorCLI) -> TranslatorConfig {
     translator_config
 }
 
-pub fn setup_dubber_cli(options: DubberCLI) -> Result<DubberConfig, DubError> {
+pub fn setup_dubber_cli(options: DubberCLI) -> Result<DubberConfig, dub::Error> {
     let llm_address = match options.address {
         Some(address) => address,
         None => {
@@ -197,13 +216,13 @@ pub fn setup_dubber_cli(options: DubberCLI) -> Result<DubberConfig, DubError> {
 
     let output_folder = match options.output_folder.is_dir() {
         true => options.output_folder,
-        false => return Err(DubError::FolderRequired),
+        false => return Err(dub::Error::FolderRequired),
     };
 
     let input_srt = options.input_srt;
     let voice_refs_dir = match options.voice_refs_dir.is_dir() {
         true => options.voice_refs_dir,
-        false => return Err(DubError::FolderRequired),
+        false => return Err(dub::Error::FolderRequired),
     };
 
     let output_language = match options.output_language {

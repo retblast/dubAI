@@ -1,7 +1,6 @@
 use crate::config::DubberConfig;
 use crate::srt_ops::{SRTFragment, form_timestamp_from_timing};
 use ffmpeg_sidecar::command::FfmpegCommand;
-use llm_connect::connection::LlmConnectionError;
 use llm_connect::connection::openai_tts_send_prompt;
 use std::collections::HashMap;
 use std::fmt::Display;
@@ -20,34 +19,42 @@ fn create_base_ffmpeg_command(audio_file: &str) -> FfmpegCommand {
 }
 
 #[derive(Debug)]
-pub enum DubError {
-    LlmError(LlmConnectionError),
+pub enum Error {
+    LlmError(llm_connect::connection::Error),
     IoError(std::io::Error),
     CouldntParsePath,
     //TODO: more context in general for errors
     FolderRequired,
 }
 
-impl From<std::io::Error> for DubError {
-    fn from(error: std::io::Error) -> Self {
-        DubError::IoError(error)
-    }
-}
-
-impl From<LlmConnectionError> for DubError {
-    fn from(error: LlmConnectionError) -> Self {
-        Self::LlmError(error)
-    }
-}
-
-impl Display for DubError {
+impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::LlmError(error) => write!(f, "Error with the LLM: {error}"),
-            Self::IoError(error) => write!(f, "Dubbing IO Error: {error}"),
-            Self::CouldntParsePath => write!(f, "Couldn't create a needed path."),
-            Self::FolderRequired => write!(f, "Folder required."),
+            Self::LlmError(error) => write!(f, "The was an error with the LLM due to {error}."),
+            Self::IoError(error) => write!(f, "There was an IO error due to {error}."),
+            Self::CouldntParsePath => write!(f, "Couldn't parse path"),
+            Self::FolderRequired => write!(f, "No folder to store the dubbed files was supplied."),
         }
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            _ => None,
+        }
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(error: std::io::Error) -> Self {
+        Error::IoError(error)
+    }
+}
+
+impl From<llm_connect::connection::Error> for Error {
+    fn from(error: llm_connect::connection::Error) -> Self {
+        Self::LlmError(error)
     }
 }
 
@@ -56,12 +63,12 @@ pub fn create_voice_references(
     srt_fragments: &[SRTFragment],
     audio_file: &Path,
     output_folder: &Path,
-) -> Result<HashMap<usize, String>, DubError> {
+) -> Result<HashMap<usize, String>, Error> {
     let mut voice_references = HashMap::new();
     for current_srt_fragment in srt_fragments {
         let mut ffmpeg_command = match audio_file.to_str() {
             Some(path) => create_base_ffmpeg_command(&path),
-            None => return Err(DubError::CouldntParsePath),
+            None => return Err(Error::CouldntParsePath),
         };
         let voice_ref_idx = current_srt_fragment.index;
         let start = form_timestamp_from_timing(&current_srt_fragment.timing.start);
@@ -70,7 +77,7 @@ pub fn create_voice_references(
 
         // Insert before adding the path for ffmpeg
         voice_references.insert(voice_ref_idx, output_filename.to_string());
-        output_filename.insert_str(0, output_folder.to_str().ok_or(DubError::CouldntParsePath)?);
+        output_filename.insert_str(0, output_folder.to_str().ok_or(Error::CouldntParsePath)?);
 
         // Code to create the file
         ffmpeg_command.args(["-ss", format!("{}", start).as_str()]);
@@ -96,7 +103,7 @@ pub async fn dub_line(
     dubber_config: &DubberConfig,
     subtitle_lines: &str,
     voice_ref: &str,
-) -> Result<(), DubError> {
+) -> Result<(), Error> {
     // The output filename is: output_folder + the index of the voice ref + _dubbed.mp3
     // the trimming is kinda finnicky
     let voice_ref_idx = voice_ref.trim_end_matches("_ref.wav").to_string();
@@ -111,7 +118,7 @@ pub async fn dub_line(
             &dubber_config
                 .output_folder
                 .to_str()
-                .ok_or(DubError::CouldntParsePath)?,
+                .ok_or(Error::CouldntParsePath)?,
         );
         temp_clone
     };
@@ -156,7 +163,7 @@ pub async fn dub_srt_file(
     srt_fragments: &Vec<SRTFragment>,
     dubber_config: &DubberConfig,
     voice_references: HashMap<usize, String>,
-) -> Result<(), DubError> {
+) -> Result<(), Error> {
     for current_srt_fragment in srt_fragments {
         let voice_ref_idx: usize = current_srt_fragment.index;
         println!("Voice ref idx: {}", &voice_ref_idx);

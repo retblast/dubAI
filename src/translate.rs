@@ -1,6 +1,5 @@
 use crate::config::TranslatorConfig;
 use crate::srt_ops::SRTFragment;
-use llm_connect::connection::LlmConnectionError;
 use llm_connect::connection::openai_chat_send_prompt;
 use std::fmt::Display;
 use std::fmt::Formatter;
@@ -9,20 +8,28 @@ use std::io::BufRead;
 use std::io::BufReader;
 
 #[derive(Debug)]
-pub enum TranslateError {
-    LlmError(LlmConnectionError),
+pub enum Error {
+    Llm(llm_connect::connection::Error),
 }
 
-impl From<LlmConnectionError> for TranslateError {
-    fn from(error: LlmConnectionError) -> Self {
-        Self::LlmError(error)
+impl From<llm_connect::connection::Error> for Error {
+    fn from(error: llm_connect::connection::Error) -> Self {
+        Self::Llm(error)
     }
 }
 
-impl Display for TranslateError {
+impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::LlmError(error) => write!(f, "Error with the LLM: {error}"),
+            Self::Llm(error) => write!(f, "Error with the LLM: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Error::Llm(error) => std::error::Error::source(error),
         }
     }
 }
@@ -31,7 +38,7 @@ impl Display for TranslateError {
 pub async fn translate_loaded_srt_fragments(
     srt_fragments: &[SRTFragment],
     translator_config: &TranslatorConfig,
-) -> Result<Vec<SRTFragment>, TranslateError> {
+) -> Result<Vec<SRTFragment>, Error> {
     let mut output_fragments: Vec<SRTFragment> = Vec::new();
     for current_srt_fragment in srt_fragments {
         let mut translated_fragment = current_srt_fragment.clone();
@@ -87,7 +94,7 @@ pub fn get_translated_srt_progress(read_buffer: &mut BufReader<&File>) -> u16 {
 pub async fn translate_line(
     line: &String,
     translator_config: &TranslatorConfig,
-) -> Result<String, TranslateError> {
+) -> Result<String, Error> {
     // Because we can't access fields in format!
     let input_language = &translator_config.input_language;
     let output_language = &translator_config.output_language;
@@ -109,8 +116,8 @@ pub async fn translate_line(
         &translator_config.llm_address,
         &system_prompt,
         &user_prompt,
-        &translator_config.temperature,
-        &(translator_config.max_tokens as u32),
+        translator_config.temperature,
+        (translator_config.max_tokens as u32),
         5,
     )
     .await?;
